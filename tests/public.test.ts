@@ -44,3 +44,11 @@ test('the public entry reaches no UI module, no process or file API and no theme
 	}
 	assert.deepEqual(offenders, []);
 });
+
+test('the public entry exports the provider contract and the registry', async () => {
+	const pub = await import('../src/public.js');
+	for (const name of ['isInteractive', 'registerChatProvider', 'chatProviders', 'chatProvider']) {
+		assert.equal(typeof (pub as Record<string, unknown>)[name], 'function', name);
+	}
+	assert.equal('currentChat' in pub, false);
+});

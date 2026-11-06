@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.2.0): it registers the gallery sections and adds no command until CHAT-3, which adds the `chat …` commands. It depends on core only and has no data directory and no credentials. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.3.0): it registers the gallery sections and adds no command until CHAT-3b, which adds the `chat …` commands. It depends on core only and has no data directory and no credentials. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## The contract (`src/contract/`)
 
@@ -30,6 +30,16 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 
 Import `src/public.ts` through your own `src/deps/chat.ts` and declare `chat` in your `yena.json` dependencies. Fields in the contract are optional: a provider that lacks a feature does not emit it. Never rename a field: the claude module's runner protocol (version 1) carries these shapes on the wire.
 Import `src/public-ui.ts` only through a lazily loaded adapter (claude: `src/deps/chat-ui.ts`), so `ping`, `ask` and the background runner never load React or Ink.
+
+## Provider API
+
+`src/contract/provider.ts` (pure, in `public.ts`) is what a chat provider implements; `src/registry.ts` is where it registers. Nothing in the chat module calls a provider yet; the `chat …` commands (CHAT-3b) will.
+
+- `registerChatProvider(provider)` returns a function that removes only that registration, or `undefined` when the provider is refused (the caller logs it): the id must match `/^[a-z][a-z0-9-]{0,31}$/`, `label` is a non-empty string of at most 40 characters, `open`, `admit` and `ask` are functions, and the first registration of an id wins. `chatProviders()` lists `{id, label}` in registration order; `chatProvider(id)` returns the provider.
+- `Origin` (`user`, `assistant`, `unattended`, `module`) says who asks. `isInteractive(origin)` is true for `user` and `assistant` only; a value it does not know counts as not interactive. A provider that may run without the user at the keyboard must refuse a subscription for such an origin (Anthropic's rules) and say why.
+- `ChatProvider` has `admit(origin)` (throws when a chat may not be opened now, before the open chat is replaced), `open(request, env)` (returns an `OpenedChat`, or `undefined` when the user cancelled while it waited), the session list and history (`sessions`, `history`, `prompts`, `detail`, `title`, `rename`, `lastSession`, `projectDir`), `running()` and `stop()`, `ask(request, env)`, `commandHints()`, `describe()`, `validModel()` and the optional `legacyPrefs()` and `clearLegacyPrefs()`.
+- `OpenedChat.close()` is followed by exactly one `await flush()`; the provider frees its locks at the end of `flush`. `admitSend(origin)` throws when a message from that origin may not go into this chat.
+- `ChatSession` extends `ChatController`; every extra member (`commands`, `tasks`, `stopTask`, `mcpStatus`, `reconnectMcp`, `rewindFiles`, `setTitle`, `setKeep`, `usage`, `end`) is optional.
 
 ## The chat UI (`src/ui/`)
 

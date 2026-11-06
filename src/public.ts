@@ -11,3 +11,5 @@ export * from './contract/tools.js';
 export * from './contract/shell.js';
 export * from './contract/scrub.js';
 export * from './contract/reveal.js';
+export * from './contract/provider.js';
+export {chatProvider, chatProviders, registerChatProvider} from './registry.js';
