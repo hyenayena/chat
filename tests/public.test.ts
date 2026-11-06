@@ -29,12 +29,13 @@ function graph(entry: string): Map<string, string> {
 	return seen;
 }
 
-test('the public entry reaches no UI, no process or file API and no theme table', () => {
+test('the public entry reaches no UI module, no process or file API and no theme table', () => {
 	const files = graph(path.join(SRC, 'public.ts'));
 	assert.ok(files.size > 5);
 	const offenders: string[] = [];
 	for (const [file, text] of files) {
 		const rel = path.relative(SRC, file);
+		if (rel.startsWith('ui' + path.sep) || rel === 'public-ui.ts' || rel === 'files.ts') offenders.push(`${rel}: UI or file module in the pure graph`);
 		for (const m of text.matchAll(SPEC)) {
 			const spec = m[1]!;
 			if (BANNED_MODULES.test(spec) || BANNED_CORE.test(spec)) offenders.push(`${rel}: ${spec}`);

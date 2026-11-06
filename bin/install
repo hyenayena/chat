@@ -1,0 +1,9 @@
+#!/bin/sh
+# Installs the module dependencies (syntax highlighting) when they are missing.
+set -e
+
+MODULE_DIR=$(cd "$(dirname "$0")/.." && pwd)
+
+if ! npm ls --prefix "$MODULE_DIR" --omit=dev --depth=0 >/dev/null 2>&1; then
+	npm install --prefix "$MODULE_DIR" --no-audit --no-fund --silent || echo "Failed to install module dependencies"
+fi
