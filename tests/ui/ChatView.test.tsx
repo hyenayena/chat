@@ -450,6 +450,18 @@ test('a double-tapped Enter cannot approve two queued prompts', async () => {
 	assert.match(t.lastFrame(), /Permission 2 of 2/);
 });
 
+test('a double-tapped Enter before arming approves neither of two queued prompts', async () => {
+	const t = setup(undefined, {reveal, projectDir: '/app'});
+	await t.settle();
+	t.controller.request(toolReq({id: 'a'}));
+	t.controller.request(toolReq({id: 'b'}));
+	await t.settle(30);
+	t.press(ENTER);
+	t.press(ENTER);
+	await t.settle(10);
+	assert.equal(t.controller.calls.answers.length, 0);
+});
+
 test('escape sequences, OSC and bidi controls in a command are shown as tokens', async () => {
 	const evil = `echo ${ESC}[31mred${ESC}]0;title\u0007 \u202eevil \r x ${SECRET}`;
 	const t = await withPrompt(toolReq({input: {command: evil}, cliNote: {text: `note ${ESC}[2J`}}));

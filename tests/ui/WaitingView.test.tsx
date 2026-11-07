@@ -25,7 +25,7 @@ test('shows the waiting line with the title, polls, and calls onFree', async () 
 	);
 	cleanup.push(() => h.unmount());
 	await h.settle(40);
-	assert.match(h.lastFrame(), /Waiting for session Fix parser to finish · claude stop ends it · Esc cancels/);
+	assert.match(h.lastFrame(), /Waiting for session Fix parser to finish · chat stop ends it · Esc cancels/);
 	assert.equal(freed, 0);
 	free = true;
 	await wait(60);

@@ -2,7 +2,27 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.3.0): it registers the gallery sections and adds no command until CHAT-3b, which adds the `chat …` commands. It depends on core only and has no data directory and no credentials. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.4.0): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+
+## Commands (`src/commands.ts`)
+
+`chat [subcommand] [args…]` (`agent: deny`, autostart). Without a subcommand it opens a new chat that attaches to a background chat when one runs. The own subcommands, with their policies:
+
+- `deny`: `new [--provider <id>] [model]`, `continue`, `ask [--new] <text…>`, `resume [session]`, `rewind`, `fork`, `copy [n]`.
+- `confirm`: `start [--provider <id>] <message…>` (20 000 characters at most), `send <message…>`, `rename <name…>`, `export [file]`, `stop [session]`.
+- `safe`: `tasks`, `mcp [subcommand]` (`mcp reconnect <server>` inherits), `session`, `sessions`.
+- Any command of the open chat (its `commands`, else the default provider's `commandHints()`) is a passthrough subcommand: `chat compact` sends `/compact` to the chat. The own names win; the passthrough declares no policy and inherits `deny`.
+- `fix` (`agent: deny`) starts a chat like `chat start` with the dev-start failure record as the message.
+
+The providers are registered by other modules (`registerChatProvider`); the default one is the saved one or the first. With none, every command that needs one fails with `No chat provider is installed`.
+
+**Origin** (`src/origin.ts`): no `ctx.signal` is `user`, `ctx.caller === 'yena'` is `assistant`, anything else (a missing caller included) is `unattended`. Every open, ask and send passes it. A provider treats everything that is not `user` or `assistant` as key-only. `chat send` into the open chat from a non-interactive origin calls `OpenedChat.admitSend(origin)`; when the provider has none, it is refused with `The open chat does not take messages from unattended runs`. The same check guards a passthrough command.
+
+**Open flow** (`src/hub.ts`, `src/open-flow.ts`): replacing a chat runs `provider.admit(origin)` first (a refusal leaves the open chat untouched), then ends an idle background chat (unless attaching), closes the previous chat, and opens the new one. The view half (files, the `ChatView`, history replay, banner, shell panel, the closing line) is here; the provider opens the session. `chat` closes then flushes an opened chat exactly once.
+
+**Prefs** (`<dataDir>/prefs.json`, `{v: 1, permissionMode?, inputMode?, keepRunning?, provider?}`, written atomically): an invalid file is ignored. When the file is missing and a provider is registered, the first non-empty `legacyPrefs()` is written once and then `clearLegacyPrefs()` runs on each provider; a failed write clears nothing and logs `prefs hand-over failed`. The `Chat` settings tab has Permission mode (the options follow the default provider's modes), Input mode, Keep working after exit and Default provider.
+
+**Exports** go to `<dataDir>/exports/<YYYY-MM-DD-HH-MM>-<session8>.md`, or to a file inside the provider's project directory; the path must stay inside one of the two and an existing file is never overwritten.
 
 ## The contract (`src/contract/`)
 
@@ -29,11 +49,11 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 ## For other modules
 
 Import `src/public.ts` through your own `src/deps/chat.ts` and declare `chat` in your `yena.json` dependencies. Fields in the contract are optional: a provider that lacks a feature does not emit it. Never rename a field: the claude module's runner protocol (version 1) carries these shapes on the wire.
-Import `src/public-ui.ts` only through a lazily loaded adapter (claude: `src/deps/chat-ui.ts`), so `ping`, `ask` and the background runner never load React or Ink.
+Import `src/public-ui.ts` only through a lazily loaded adapter, so `ping`, `ask` and the background runner never load React or Ink (chat's own open flow is the one that loads it; claude loads no UI).
 
 ## Provider API
 
-`src/contract/provider.ts` (pure, in `public.ts`) is what a chat provider implements; `src/registry.ts` is where it registers. Nothing in the chat module calls a provider yet; the `chat …` commands (CHAT-3b) will.
+`src/contract/provider.ts` (pure, in `public.ts`) is what a chat provider implements; `src/registry.ts` is where it registers. The `chat` and `fix` commands and the open flow call the default provider (`src/hub.ts`, `src/commands.ts`).
 
 - `registerChatProvider(provider)` returns a function that removes only that registration, or `undefined` when the provider is refused (the caller logs it): the id must match `/^[a-z][a-z0-9-]{0,31}$/`, `label` is a non-empty string of at most 40 characters, `open`, `admit` and `ask` are functions, and the first registration of an id wins. `chatProviders()` lists `{id, label}` in registration order; `chatProvider(id)` returns the provider.
 - `Origin` (`user`, `assistant`, `unattended`, `module`) says who asks. `isInteractive(origin)` is true for `user` and `assistant` only; a value it does not know counts as not interactive. A provider that may run without the user at the keyboard must refuse a subscription for such an origin (Anthropic's rules) and say why.
@@ -44,7 +64,7 @@ Import `src/public-ui.ts` only through a lazily loaded adapter (claude: `src/dep
 ## The chat UI (`src/ui/`)
 
 The plugin (`src/index.ts`) registers the gallery sections `chat`, `diff`, `tools`, `status`, `plan` and `markdown` (`registerGallerySection`, first registration wins). A section that does not register logs `gallery section skipped`; the plugin still works.
-The views are provider-neutral: the chat, its transcript, the markdown and tool and file cards, the prompts, the agent panel, the plan widget, the status bar and the input line (with vim mode). Claude's engine, runner and commands stay in `claude`, which mounts these views (see `claude/chat.md` in the architecture folder).
+The views are provider-neutral: the chat, its transcript, the markdown and tool and file cards, the prompts, the agent panel, the plan widget, the status bar and the input line (with vim mode). Claude's engine and runner stay in `claude`, the provider that opens sessions for these views (see `claude/chat.md` in the architecture folder).
 
 Next to core's console (`control.host` present) the chat reads keys only while focused, lays out in the width the host gives, ignores the console toggle (`§` or Ctrl+T, via `host.isHostKey(input, key)`), ignores core's host keys (Shift+←/→ move the focus, Ctrl+T toggles the console); Tab with no `@`/`/` suggestion list open opens or closes the console (`host.togglePanel()`), with a list it completes, Shift+Tab cycles the mode, moves the input to the console with → on an empty draft, and Esc never leaves it (only Ctrl+C does) and never opens the console: Esc clears the draft or interrupts, and does nothing while an interrupt is pending.
 

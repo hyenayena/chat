@@ -1,4 +1,5 @@
 import type {Logger, ModulePlugin} from '../../../src/api.js';
+import {createChatCommands} from './commands.js';
 import * as kit from './kit.js';
 import {noopLog} from './log.js';
 import {chatGallerySection, diffGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from './ui/gallery.js';
@@ -23,7 +24,7 @@ const plugin: ModulePlugin = host => {
 	const log = host.log ?? noopLog;
 	log.info('plugin loaded');
 	registerGallery(log);
-	return [];
+	return createChatCommands({dataDir: host.dataDir, log, ...(host.devFailure && {devFailure: host.devFailure}), flow: host.build ? {build: host.build} : {}});
 };
 
 export default plugin;

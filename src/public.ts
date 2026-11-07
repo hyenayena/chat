@@ -13,3 +13,4 @@ export * from './contract/scrub.js';
 export * from './contract/reveal.js';
 export * from './contract/provider.js';
 export {chatProvider, chatProviders, registerChatProvider} from './registry.js';
+export {currentChat, type CurrentChat} from './current.js';

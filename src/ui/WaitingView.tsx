@@ -17,7 +17,7 @@ export interface WaitingViewProps {
 }
 
 export const waitingText = (title: string | undefined): string =>
-	`Waiting for session ${title ?? 'in another yena'} to finish · claude stop ends it · Esc cancels`;
+	`Waiting for session ${title ?? 'in another yena'} to finish · chat stop ends it · Esc cancels`;
 
 export function WaitingView(props: WaitingViewProps) {
 	const {focused} = useViewHost(props.host);

@@ -10,6 +10,7 @@ export type ShellCall = {
 export type ShellSnapshot = {calls: readonly ShellCall[]};
 
 export interface ShellFeed {
+	readonly totalBytes?: number;
 	get(): ShellSnapshot;
 	subscribe(cb: () => void): () => void;
 }

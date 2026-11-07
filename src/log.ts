@@ -8,3 +8,8 @@ export const noopLog: Logger = {
 	child: () => noopLog,
 	addRedactor: () => {},
 };
+
+export const errClass = (err: unknown): string => {
+	const name = (err as {constructor?: {name?: unknown}} | null | undefined)?.constructor?.name;
+	return typeof name === 'string' ? name : typeof err;
+};

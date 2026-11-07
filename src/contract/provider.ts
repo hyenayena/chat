@@ -56,6 +56,8 @@ export type OpenRequest = {
 	resume?: string;
 	fork?: boolean;
 	resumeAt?: string;
+	historyUntil?: string;
+	draft?: string;
 	mode?: ChatMode;
 	keep?: boolean;
 };
