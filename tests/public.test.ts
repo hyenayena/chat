@@ -47,8 +47,9 @@ test('the public entry reaches no UI module, no process or file API and no theme
 
 test('the public entry exports the provider contract and the registry', async () => {
 	const pub = await import('../src/public.js');
-	for (const name of ['isInteractive', 'registerChatProvider', 'chatProviders', 'chatProvider', 'currentChat']) {
+	for (const name of ['isInteractive', 'registerChatProvider', 'chatProviders', 'chatProvider', 'currentChat', 'readChatEvent', 'readUiEvent', 'readPermissionRequest', 'readPermissionDecision']) {
 		assert.equal(typeof (pub as Record<string, unknown>)[name], 'function', name);
 	}
+	assert.equal(typeof pub.ContractError, 'function');
 	assert.equal('setCurrentChat' in pub, false);
 });
