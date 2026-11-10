@@ -11,6 +11,7 @@ test('the UI entry exposes exactly the stable names', async () => {
 		'assistantPrint',
 		'assistantRows',
 		'createChatElement',
+		'createPermissionElement',
 		'createPickerElement',
 		'createShellElement',
 		'createWaitingElement',
@@ -27,4 +28,9 @@ test('createChatElement returns an element for a controller', async () => {
 	const element = createChatElement({controller: fakeController(), print() {}, close() {}, scrub: s => s});
 	assert.equal(typeof element, 'object');
 	assert.ok(element);
+});
+
+test('createPermissionElement refuses a handle that openSession did not return', async () => {
+	const {createPermissionElement} = await import('../src/public-ui.js');
+	assert.throws(() => createPermissionElement({session: {} as never, request: {} as never}), /Not a module session/);
 });

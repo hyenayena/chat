@@ -1,6 +1,7 @@
 import type {CommandContext, Logger} from '../../../src/api.js';
 import type {ChatProvider, OpenedChat, Origin} from './contract/provider.js';
-import {setCurrentChat} from './current.js';
+import {markUserChat, setCurrentChat} from './current.js';
+import {endModuleSessions} from './module-sessions.js';
 import {NEEDS_MOUNT_MESSAGE, runChatView, type FlowDeps, type FlowRequest} from './open-flow.js';
 import {noopLog} from './log.js';
 
@@ -41,54 +42,60 @@ export function createChatHub(deps: ChatHubDeps = {}): ChatHub {
 		replaceChat: async (provider, req, ctx, options = {}) => {
 			if (!ctx.mount) throw new Error(NEEDS_MOUNT_MESSAGE);
 			if (hub.askRunning) throw new Error('An ask is already running');
-			await provider.admit(req.origin);
-			const previous = hub.current;
-			if (options.refuseWhileRunning && previous?.opened?.session.state === 'running') throw new Error(ANSWERING);
-			if (req.attach !== true && previous?.opened?.session.state === 'idle') previous.opened.session.end?.();
-			if (previous) {
-				previous.close();
-				await previous.done.catch(() => {});
-			}
-
-			let close: (() => void) | undefined;
-			let closeRequested = false;
-			const held: HeldChat = {
-				provider,
-				origin: req.origin,
-				opened: undefined,
-				deliver: undefined,
-				close: () => {
-					closeRequested = true;
-					close?.();
-				},
-				done: Promise.resolve(),
-			};
-			const base = deps.flow?.() ?? {};
-			held.done = runChatView(provider, req, ctx, {
-				...base,
-				onOpened: opened => {
-					held.opened = opened;
-					setCurrentChat({providerId: provider.id, origin: req.origin, session: opened.session});
-					base.onOpened?.(opened);
-				},
-				onMount: c => {
-					close = c;
-					options.onMounted?.();
-					if (closeRequested) queueMicrotask(c);
-				},
-				onInbox: deliver => {
-					held.deliver = deliver;
-				},
-			});
-			hub.current = held;
+			const unmark = markUserChat();
 			try {
-				await held.done;
-			} finally {
-				if (hub.current === held) {
-					hub.current = undefined;
-					setCurrentChat(undefined);
+				await provider.admit(req.origin);
+				await endModuleSessions('replaced', t => ctx.print(t));
+				const previous = hub.current;
+				if (options.refuseWhileRunning && previous?.opened?.session.state === 'running') throw new Error(ANSWERING);
+				if (req.attach !== true && previous?.opened?.session.state === 'idle') previous.opened.session.end?.();
+				if (previous) {
+					previous.close();
+					await previous.done.catch(() => {});
 				}
-				log.debug('chat view ended', {provider: provider.id});
+
+				let close: (() => void) | undefined;
+				let closeRequested = false;
+				const held: HeldChat = {
+					provider,
+					origin: req.origin,
+					opened: undefined,
+					deliver: undefined,
+					close: () => {
+						closeRequested = true;
+						close?.();
+					},
+					done: Promise.resolve(),
+				};
+				const base = deps.flow?.() ?? {};
+				held.done = runChatView(provider, req, ctx, {
+					...base,
+					onOpened: opened => {
+						held.opened = opened;
+						setCurrentChat({providerId: provider.id, origin: req.origin, session: opened.session});
+						base.onOpened?.(opened);
+					},
+					onMount: c => {
+						close = c;
+						options.onMounted?.();
+						if (closeRequested) queueMicrotask(c);
+					},
+					onInbox: deliver => {
+						held.deliver = deliver;
+					},
+				});
+				hub.current = held;
+				try {
+					await held.done;
+				} finally {
+					if (hub.current === held) {
+						hub.current = undefined;
+						setCurrentChat(undefined);
+					}
+					log.debug('chat view ended', {provider: provider.id});
+				}
+			} finally {
+				unmark();
 			}
 		},
 	};

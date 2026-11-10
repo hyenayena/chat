@@ -4,7 +4,7 @@ import {Box, Text, useInput, usePaste, useWindowSize, type Key} from 'ink';
 import type {PrintOptions, ViewHost} from '../../../../src/api.js';
 import type {ChatController, ChatEvent} from '../public.js';
 import {limitIndicator, systemClock, type Clock} from '../public.js';
-import {MODE_CYCLE, QUESTION_LIMITS, REASON_MAX} from '../public.js';
+import {MODE_CYCLE} from '../public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest} from '../public.js';
 import {sanitizeMultilineInput, truncateCells, wrapRows} from '../kit.js';
 import {layoutPanel, navigate, revealAgent, type PanelMove} from './agent-panel.js';
@@ -31,21 +31,8 @@ import {
 	queuedLines,
 	type Scrub,
 } from './present.js';
-import {
-	appendText,
-	ARM_MS,
-	initQuestionPrompt,
-	initToolPrompt,
-	isArmed,
-	layoutPrompt,
-	normalizeKey,
-	questionPromptKey,
-	rearm,
-	toolBodyRows,
-	toolPromptKey,
-	type QuestionPromptState,
-	type ToolPromptState,
-} from './prompt-state.js';
+import {ARM_MS, layoutPrompt, type QuestionPromptState, type ToolPromptState} from './prompt-state.js';
+import {newPromptEntry, promptEntryKey, promptEntryPaste, rearmEntry, type PromptEntry} from './prompt-entry.js';
 import {QuestionPrompt} from './QuestionPrompt.js';
 import {parseSlash, slashHints, type SlashHints} from './slash.js';
 import {commandHost, type ViewCommandInfo} from './view-commands.js';
@@ -88,15 +75,6 @@ export interface ChatViewProps {
 	host?: ViewHost;
 	clock?: Clock;
 }
-
-type PromptEntry =
-	| {id: string; request: Extract<PermissionRequest, {kind: 'tool'}>; state: ToolPromptState; armedSig: string}
-	| {id: string; request: Extract<PermissionRequest, {kind: 'question'}>; state: QuestionPromptState; armedSig: string};
-
-const promptSig = (p: PromptEntry, tier: string): string =>
-	p.request.kind === 'tool'
-		? `${p.id}:${(p.state as ToolPromptState).view}:${tier}`
-		: `${p.id}:${(p.state as QuestionPromptState).index}:${(p.state as QuestionPromptState).view}:${tier}`;
 
 export const BUSY_HINT = 'Wait for the answer or press Esc to interrupt';
 export const ESC_AGAIN_HINT = 'Press Esc again to interrupt';
@@ -617,11 +595,7 @@ export function ChatView(props: ChatViewProps) {
 		}
 		if (promptRef.current?.id !== head.id) {
 			pendingModeRef.current = undefined;
-			const closed = {armedAt: Number.POSITIVE_INFINITY};
-			promptRef.current =
-				head.kind === 'tool'
-					? {id: head.id, request: head, state: {...initToolPrompt(head, 0, armMs), ...closed}, armedSig: ''}
-					: {id: head.id, request: head, state: {...initQuestionPrompt(head, 0, armMs), ...closed}, armedSig: ''};
+			promptRef.current = newPromptEntry(head, armMs);
 		}
 		return promptRef.current;
 	};
@@ -635,43 +609,13 @@ export function ChatView(props: ChatViewProps) {
 	};
 
 	const promptKey = (p: PromptEntry, input: string, key: Key) => {
-		const pk = normalizeKey(input, key);
-		const now = Date.now();
-		const layout = layoutPrompt(viewRows, columns);
-		let notice: string | undefined;
-		let decision: PermissionDecision | undefined;
-		let stopTurn: boolean | undefined;
-		if (p.request.kind === 'tool') {
-			const state = p.state as ToolPromptState;
-			let pager;
-			if (state.view === 'full') {
-				const total = toolBodyRows(p.request, reveal, layout.width).length;
-				pager = {max: Math.max(0, total - layout.pagerRows), page: Math.max(1, layout.pagerRows - 1)};
-			}
-			const blind = layout.tier === 'minimal';
-			const res = toolPromptKey(state, p.request, pk, now, pager, armMs, blind);
-			p.state = res.state;
-			({notice, decision, stopTurn} = res);
-		} else {
-			const res = questionPromptKey(p.state as QuestionPromptState, p.request, pk, now, armMs, layout.budget < 4);
-			p.state = res.state;
-			({notice, decision, stopTurn} = res);
-		}
-		if (decision) answer(p, decision, stopTurn);
-		setT(setNotice(tRef.current, notice));
+		const res = promptEntryKey(p, input, key, {rows: viewRows, columns, reveal, armMs, now: Date.now()});
+		if (res.decision) answer(p, res.decision, res.stopTurn);
+		setT(setNotice(tRef.current, res.notice));
 	};
 
 	const promptPaste = (p: PromptEntry, text: string) => {
-		const now = Date.now();
-		if (!isArmed(p.state, now)) return;
-		if (p.request.kind === 'tool') {
-			const state = p.state as ToolPromptState;
-			if (state.view === 'reason') p.state = {...state, reason: appendText(state.reason, text, REASON_MAX)};
-		} else {
-			const state = p.state as QuestionPromptState;
-			if (state.view === 'other') p.state = {...state, other: appendText(state.other, text, QUESTION_LIMITS.freeText)};
-		}
-		render();
+		if (promptEntryPaste(p, text, Date.now())) render();
 	};
 
 	const modeKey = (key: Key) => {
@@ -1107,10 +1051,7 @@ export function ChatView(props: ChatViewProps) {
 	useEffect(() => {
 		const p = promptRef.current;
 		if (!p) return;
-		const sig = promptSig(p, layoutPrompt(viewRows, columns).tier);
-		if (p.armedSig === sig) return;
-		p.armedSig = sig;
-		p.state = rearm(p.state, Date.now(), armMs) as typeof p.state;
+		rearmEntry(p, layoutPrompt(viewRows, columns).tier, Date.now(), armMs);
 	});
 
 	const prompt = currentPrompt();

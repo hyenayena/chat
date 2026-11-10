@@ -15,3 +15,5 @@ export * from './contract/provider.js';
 export * from './contract/validate.js';
 export {chatProvider, chatProviders, registerChatProvider} from './registry.js';
 export {currentChat, type CurrentChat} from './current.js';
+export * from './contract/module-session.js';
+export {openSession, collectAnswer} from './module-sessions.js';

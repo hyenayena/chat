@@ -9,3 +9,17 @@ export const currentChat = (): CurrentChat | undefined => current;
 export function setCurrentChat(chat: CurrentChat | undefined): void {
 	current = chat;
 }
+
+let userChats = 0;
+
+export const userChatsBusy = (): number => userChats;
+
+export function markUserChat(): () => void {
+	userChats++;
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		userChats--;
+	};
+}

@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.4.0): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.0): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -44,12 +44,34 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 ## Public entries
 
 - `src/public.ts`: the contract, pure.
-- `src/public-ui.ts`: the UI, React and Ink allowed: `createChatElement`, `createPickerElement`, `createShellElement`, `createWaitingElement`, `formatBanner`, `formatFileCard`, `assistantPrint`, `assistantRows`, `formatNotice`, `formatUserLine`, `listProjectFiles`, and the types `ChatUiHelpers`, `ChatViewProps`, `ListPickerProps`, `WaitingViewProps`, `Scrub`.
+- `src/public-ui.ts`: the UI, React and Ink allowed: `createChatElement`, `createPermissionElement`, `createPickerElement`, `createShellElement`, `createWaitingElement`, `formatBanner`, `formatFileCard`, `assistantPrint`, `assistantRows`, `formatNotice`, `formatUserLine`, `listProjectFiles`, and the types `ChatUiHelpers`, `ChatViewProps`, `ListPickerProps`, `PermissionElementProps`, `WaitingViewProps`, `Scrub`.
 
 ## For other modules
 
 Import `src/public.ts` through your own `src/deps/chat.ts` and declare `chat` in your `yena.json` dependencies. Fields in the contract are optional: a provider that lacks a feature does not emit it. Never rename a field: the claude module's runner protocol (version 1) carries these shapes on the wire.
 Import `src/public-ui.ts` only through a lazily loaded adapter, so `ping`, `ask` and the background runner never load React or Ink (chat's own open flow is the one that loads it; claude loads no UI).
+
+### Module sessions
+
+`openSession(req)` and `collectAnswer(session, text, opts?)` (in `public.ts`, types in `src/contract/module-session.ts`) let a module run a background conversation through a registered provider and read the final answer. The event readers (`readChatEvent`, `readUiEvent`, `readPermissionRequest`, `readPermissionDecision`, `ContractError`) are exported too.
+
+The rules fail closed:
+- The origin is always `module` (key-only: the provider admits an API key only). It never attaches to a running runner, never waits for a lock and gets no console commands.
+- `mode` is `default` or `plan`. The handle has no allow path: only `deny(id)` and cancel. An allow comes from the user's keypress in `createPermissionElement({session, request, host?, onDone?, armMs?})` (public-ui), which hides the "always" choice.
+- `prompts: 'deny'` (default) denies every request at once; `'show'` keeps them for the element and cancels each after `promptTimeoutMs` (default 15 min, 1 s..1 h).
+- `collectAnswer` times out after `timeoutMs` (default 10 min, 1 s..1 h) or on an aborted signal, cancelling pending requests and interrupting. An idle session ends after `idleTimeoutMs` (default 15 min, 10 s..1 h); `end()` is idempotent.
+- One session per process: it is refused while the user's chat is open or opening; the user's `chat` ends a running one, and its `collectAnswer` resolves `interrupted` with `The user opened a chat`.
+- Text from the provider is scrubbed: `collectAnswer` returns scrubbed text, and `session.scrub(text)` is for anything shown from `subscribe`.
+
+```ts
+const session = await openSession({owner: 'clan', mode: 'plan'});
+try {
+	const {outcome, text} = await collectAnswer(session, 'Summarize the plan', {signal});
+	if (outcome === 'ok') use(text);
+} finally {
+	await session.end();
+}
+```
 
 ## Provider API
 
