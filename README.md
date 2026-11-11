@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.0): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.1): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -48,7 +48,7 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 
 ## For other modules
 
-Import `src/public.ts` through your own `src/deps/chat.ts` and declare `chat` in your `yena.json` dependencies. Fields in the contract are optional: a provider that lacks a feature does not emit it. Never rename a field: the claude module's runner protocol (version 1) carries these shapes on the wire.
+Import `src/public.ts` through your own `src/deps/chat.ts` and declare `chat` in your `yena.json` dependencies with a range (`{"source": "chat", "version": "^0.5.0"}`). Fields in the contract are optional: a provider that lacks a feature does not emit it. Never rename a field: the claude module's runner protocol (version 1) carries these shapes on the wire.
 Import `src/public-ui.ts` only through a lazily loaded adapter, so `ping`, `ask` and the background runner never load React or Ink (chat's own open flow is the one that loads it; claude loads no UI).
 
 ### Module sessions

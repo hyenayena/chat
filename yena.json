@@ -1,11 +1,14 @@
 {
 	"name": "chat",
-	"version": "0.5.0",
+	"version": "0.5.1",
 	"description": "Provider-neutral chat: the chat contract and the chat UI",
 	"runtime": "node",
 	"entry": "src/index.ts",
 	"install": "bin/install",
 	"dependencies": {
-		"core": "git@github.com:hyenayena/core.git"
+		"core": {
+			"source": "core",
+			"version": "^0.22.0"
+		}
 	}
 }
