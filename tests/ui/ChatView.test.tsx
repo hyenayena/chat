@@ -56,7 +56,7 @@ test('createChatElement returns a renderable element', async () => {
 		createChatElement({controller, print() {}, close() {}, scrub}) as never,
 	);
 	cleanup.push(() => h.unmount());
-	await h.settle();
+	await h.until(() => bar(h) === 'idle');
 	assert.equal(bar(h), 'idle');
 });
 

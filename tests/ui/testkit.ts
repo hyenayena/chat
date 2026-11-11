@@ -35,6 +35,11 @@ export function mountHarness(element: ReactElement, size = {columns: 80, rows: 2
 		chunks,
 		press: (sequence: string) => stdin.write(sequence),
 		settle: (ms = 30) => wait(ms),
+		// A fixed settle can be too short for the first mount on a loaded machine.
+		async until(done: () => boolean, timeoutMs = 2000) {
+			const end = Date.now() + timeoutMs;
+			while (!done() && Date.now() < end) await wait(10);
+		},
 		lastFrame: () => chunks.at(-1) ?? '',
 		resize(columns: number, rows: number) {
 			Object.assign(stdout, {columns, rows});
