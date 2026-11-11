@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {afterEach, mock, test} from 'node:test';
 import {currentChat, collectAnswer, openSession, type ModuleSessionRequest, type PermissionDecision, type PermissionRequest} from '../src/public.js';
+import {setActivityEvents} from '../src/activity.js';
 import {moduleSessionCount, resetModuleSessions, setModuleSessionLog} from '../src/module-sessions.js';
 import {makeFakeLog, serialized} from './helpers/fake-log.js';
 import {makeProvider, type FakeOptions, type FakeSession} from './helpers/fake-provider.js';
@@ -435,4 +436,22 @@ test('neither public entry exports the internals or an allow path', async () => 
 	}
 	const {h} = await mod();
 	for (const name of ['answerPermission', 'setMode', 'allow', 'opened', 'internals']) assert.equal(name in h, false, name);
+});
+
+test('a module session reports its activity under chat:module-<owner> and releases it on end', async () => {
+	const sent: Array<{id: string; label: string; state: string}> = [];
+	setActivityEvents({emit: (_t, p) => void sent.push(p as (typeof sent)[number]), on: () => () => {}});
+	try {
+		const {h, s} = await mod();
+		s.emit({type: 'state', state: 'running'});
+		s.emit({type: 'state', state: 'idle'});
+		await h.end();
+		assert.deepEqual(
+			sent.map(r => r.state),
+			['running', 'ok', 'gone'],
+		);
+		assert.ok(sent.every(r => r.id === 'module-clan' && r.label === 'chat · clan'));
+	} finally {
+		setActivityEvents(undefined);
+	}
 });

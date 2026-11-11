@@ -2,6 +2,7 @@ import type {Logger, ModulePlugin} from '../../../src/api.js';
 import {createChatCommands} from './commands.js';
 import * as kit from './kit.js';
 import {noopLog} from './log.js';
+import {setActivityEvents} from './activity.js';
 import {setModuleSessionLog} from './module-sessions.js';
 import {chatGallerySection, diffGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from './ui/gallery.js';
 import {markdownGallerySection} from './ui/markdown-gallery.js';
@@ -25,6 +26,7 @@ const plugin: ModulePlugin = host => {
 	const log = host.log ?? noopLog;
 	log.info('plugin loaded');
 	setModuleSessionLog(log);
+	setActivityEvents(host.events);
 	registerGallery(log);
 	return createChatCommands({dataDir: host.dataDir, log, ...(host.devFailure && {devFailure: host.devFailure}), flow: host.build ? {build: host.build} : {}});
 };

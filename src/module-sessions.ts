@@ -5,6 +5,7 @@ import type {CollectedAnswer, CollectOptions, ModuleSession, ModuleSessionReques
 import type {ChatProvider, OpenedChat} from './contract/provider.js';
 import {makeScrub} from './contract/scrub.js';
 import {currentChat, userChatsBusy} from './current.js';
+import {watchChatActivity} from './activity.js';
 import {sanitizeText} from './kit.js';
 import {errClass, noopLog} from './log.js';
 import {chatProvider, chatProviders} from './registry.js';
@@ -241,7 +242,12 @@ function register(
 		}
 		armIdle();
 	};
-	const unwatch = session.subscribe(onEvent);
+	const unwatchEvents = session.subscribe(onEvent);
+	const unwatchActivity = watchChatActivity(session, {id: `module-${owner}`, label: `chat · ${owner}`});
+	const unwatch = (): void => {
+		unwatchEvents();
+		unwatchActivity();
+	};
 
 	const handle: ModuleSession = Object.freeze({
 		owner,

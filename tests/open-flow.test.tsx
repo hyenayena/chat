@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import React from 'react';
 void React;
+import {setActivityEvents} from '../src/activity.js';
 import {loadUiChecked, NEEDS_MOUNT_MESSAGE, runChatView, UI_MISSING_MESSAGE} from '../src/open-flow.js';
 import {makeScrub} from '../src/public.js';
 import {makeFakeLog} from './helpers/fake-log.js';
@@ -212,4 +213,18 @@ test('a session that closes itself (a remote stop) ends the view', async () => {
 	r.f.sessions[0]!.emit({type: 'state', state: 'closed'});
 	await r.done;
 	assert.deepEqual(r.f.events, ['open', 'close', 'flush']);
+});
+
+test('the user chat reports activity as chat:user and releases it when the view ends', async () => {
+	const sent: Array<{source: string; id: string; label: string; state: string}> = [];
+	setActivityEvents({emit: (_t, p) => void sent.push(p as (typeof sent)[number]), on: () => () => {}});
+	try {
+		const r = await flow({session: {title: 'secret title'} as never});
+		r.ctx.closeAll();
+		await r.done;
+		assert.equal(sent.at(-1)?.state, 'gone');
+		assert.ok(sent.every(x => x.source === 'chat' && x.id === 'user' && x.label === 'chat'));
+	} finally {
+		setActivityEvents(undefined);
+	}
 });

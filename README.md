@@ -73,6 +73,10 @@ try {
 }
 ```
 
+### Activity in the console panel
+
+The user's chat (`chat:user`) and each module session (`chat:module-<owner>`, label `chat · <owner>`) report `running` while they answer, `ok` after an idle turn and `gone` when they end, through core's `reportActivity` on the host bus (`src/activity.ts`). Only sessions this yena holds are shown.
+
 ## Provider API
 
 `src/contract/provider.ts` (pure, in `public.ts`) is what a chat provider implements; `src/registry.ts` is where it registers. The `chat` and `fix` commands and the open flow call the default provider (`src/hub.ts`, `src/commands.ts`).

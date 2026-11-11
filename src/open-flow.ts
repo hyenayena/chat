@@ -1,3 +1,4 @@
+import {watchChatActivity} from './activity.js';
 import type {BuildInfo, CommandContext, Logger, MountControl, PrintOptions, UiElement, ViewHost} from '../../../src/api.js';
 import type {ChatProvider, OpenedChat, OpenEnv, OpenRequest} from './contract/provider.js';
 import type {ShellFeed} from './contract/shell.js';
@@ -122,6 +123,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	let shellPanel: ReturnType<typeof createShellPanel> | undefined;
 	let unregister: (() => void) | undefined;
 	let unwatchClosed: (() => void) | undefined;
+	let unwatchActivity: (() => void) | undefined;
 	try {
 		const shell = opened.shell;
 		shellPanel = shell
@@ -140,6 +142,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		lifetime.signal.addEventListener('abort', () => session.close());
 
 		deps.onOpened?.(opened);
+		unwatchActivity = watchChatActivity(session, {id: 'user', label: 'chat'});
 		let printHistory: ((text: string, options?: PrintOptions) => void) | undefined;
 		const mounted = mount(control => {
 			printHistory = control.print ?? ctx.print;
@@ -210,6 +213,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		const model = session.model;
 		shellPanel?.dispose();
 		unwatchClosed?.();
+		unwatchActivity?.();
 		try {
 			opened.close();
 		} finally {
