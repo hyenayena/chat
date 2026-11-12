@@ -24,7 +24,7 @@ function registerGallery(log: Logger): void {
 
 const plugin: ModulePlugin = host => {
 	const log = host.log ?? noopLog;
-	log.info('plugin loaded');
+	log.debug('plugin loaded');
 	setModuleSessionLog(log);
 	setActivityEvents(host.events);
 	registerGallery(log);

@@ -1,6 +1,6 @@
 {
 	"name": "chat",
-	"version": "0.5.5",
+	"version": "0.5.6",
 	"description": "Provider-neutral chat: the chat contract and the chat UI",
 	"runtime": "node",
 	"entry": "src/index.ts",

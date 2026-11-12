@@ -16,7 +16,7 @@ const SECTIONS = ['chat', 'diff', 'tools', 'status', 'plan', 'layout', 'markdown
 test('the plugin returns the chat and fix commands, logs the load and registers its gallery sections', async () => {
 	const log = makeFakeLog();
 	assert.deepEqual((await plugin(host(log))).map(c => c.name), ['chat', 'fix']);
-	assert.deepEqual(log.records.filter(r => r.level === 'info').map(r => r.msg), ['plugin loaded']);
+	assert.deepEqual(log.records.filter(r => r.level === 'debug').map(r => r.msg), ['plugin loaded']);
 	const names = gallerySections().map(s => s.name);
 	for (const name of SECTIONS) assert.ok(names.includes(name), name);
 });
