@@ -4,6 +4,8 @@ import {render} from 'ink';
 import type {ChatController, ChatEvent, ChatState, UiEvent} from '../../src/public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest, QuestionRequest, ToolRequest} from '../../src/public.js';
 
+const CONTROL_ONLY = new RegExp(String.fromCharCode(27) + '\\[[0-9;?]*[A-Za-z]', 'g');
+
 export const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 export function mountHarness(element: ReactElement, size = {columns: 80, rows: 24}) {
@@ -40,11 +42,12 @@ export function mountHarness(element: ReactElement, size = {columns: 80, rows: 2
 			const end = Date.now() + timeoutMs;
 			while (!done() && Date.now() < end) await wait(10);
 		},
-		lastFrame: () => chunks.at(-1) ?? '',
+		lastFrame: () => [...chunks].reverse().find(c => c.replace(CONTROL_ONLY, '') !== '') ?? '',
 		resize(columns: number, rows: number) {
 			Object.assign(stdout, {columns, rows});
 			stdout.emit('resize');
 		},
+		resizeListeners: () => stdout.listenerCount('resize'),
 		unmount: () => instance.unmount(),
 	};
 }

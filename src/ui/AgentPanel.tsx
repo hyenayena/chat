@@ -1,11 +1,10 @@
 import React, {useSyncExternalStore} from 'react';
-import {useWindowSize} from 'ink';
 import {fixedRowBudget} from '../kit.js';
 import type {ViewHost} from '../../../../src/api.js';
 import {layoutPanel} from './agent-panel.js';
 import type {AgentStore} from './agent-store.js';
 import {anyRunning} from './agents.js';
-import {SPINNERS, SpanRows, useSpinnerFrame, useViewHost} from './kit.js';
+import {SPINNERS, SpanRows, useSpinnerFrame, useViewHost, useTerminalSize} from './kit.js';
 import type {Scrub} from './present.js';
 
 export type AgentPanelProps = {store: AgentStore; host?: ViewHost; scrub: Scrub; rows?: number; maxRows?: number};
@@ -13,7 +12,7 @@ export type AgentPanelProps = {store: AgentStore; host?: ViewHost; scrub: Scrub;
 export function AgentPanel({store, host, scrub, rows, maxRows}: AgentPanelProps) {
 	const state = useSyncExternalStore(store.subscribe, store.get);
 	const {columns} = useViewHost(host);
-	const terminal = useWindowSize();
+	const terminal = useTerminalSize();
 	const active = anyRunning(state);
 	const spinner = useSpinnerFrame(SPINNERS.sparkle, 120, active);
 	const corner = useSpinnerFrame(SPINNERS.squareCorners, 120, active);

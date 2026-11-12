@@ -148,6 +148,21 @@ test('with a header slot the panel goes to the host; a header click opens and cl
 	assert.equal(f.headers.at(-1), null, 'the header is cleared on unmount');
 });
 
+test('many agent panels share one terminal resize listener', async () => {
+	const t = setup({}, {columns: 80, rows: 30});
+	await t.settle();
+	t.controller.setState('running');
+	for (const [id, type] of [['a1', 'Explore'], ['a2', 'Coder'], ['a3', 'Plan'], ['a4', 'Review']]) spawn(t.controller, id, type);
+	await t.settle();
+	assert.match(t.lastFrame(), /Explore/);
+	assert.match(t.lastFrame(), /Review/);
+	assert.equal(t.resizeListeners(), 2, "Ink's own listener plus the shared one");
+	spawn(t.controller, 'a5', 'Test');
+	spawn(t.controller, 'a6', 'Docs');
+	await t.settle();
+	assert.equal(t.resizeListeners(), 2);
+});
+
 test('agents still running when the view mounts are seeded from the controller tasks', async () => {
 	const controller = fakeController();
 	Object.assign(controller, {tasks: [{id: 'T1', status: 'running', background: true, taskType: 'local_agent', toolUseId: 'tu1', subagentType: 'Researcher', description: 'Dig'}]});

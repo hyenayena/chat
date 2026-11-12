@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.4): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.5): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 

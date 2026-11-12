@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import React, {createElement, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
-import {Box, Text, useInput, usePaste, useWindowSize, type Key} from 'ink';
+import {Box, Text, useInput, usePaste, type Key} from 'ink';
 import type {PrintOptions, ViewHost} from '../../../../src/api.js';
 import type {ChatController, ChatEvent} from '../public.js';
 import {limitIndicator, systemClock, type Clock} from '../public.js';
@@ -40,7 +40,7 @@ import {parseSlash, slashHints, type SlashHints} from './slash.js';
 import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
-import {useViewHost} from './kit.js';
+import {useViewHost, useTerminalSize} from './kit.js';
 import {preloadHighlighter} from './highlight.js';
 import {mouseHost, validEvent, type ViewMouseEvent} from './view-mouse.js';
 import {vimKey, vimStart, type VimEffect, type VimState} from './vim.js';
@@ -166,7 +166,7 @@ export function ChatView(props: ChatViewProps) {
 	const beatRef = useRef(0);
 	const reveal = props.reveal ?? scrub;
 	const armMs = props.armMs ?? ARM_MS;
-	const terminal = useWindowSize();
+	const terminal = useTerminalSize();
 	const rows = terminal.rows;
 	const {focused, columns} = useViewHost(props.host);
 	const host = props.host;

@@ -1,10 +1,10 @@
 import React, {useSyncExternalStore} from 'react';
-import {Box, useWindowSize} from 'ink';
+import {Box} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
 import {AgentPanel} from './AgentPanel.js';
 import type {AgentStore} from './agent-store.js';
 import {headerLayout} from './chat-layout.js';
-import {useViewHost} from './kit.js';
+import {useViewHost, useTerminalSize} from './kit.js';
 import {PlanWidget} from './PlanWidget.js';
 import type {PlanView} from './plan-widget.js';
 import type {Scrub} from './tool-args.js';
@@ -16,7 +16,7 @@ export function ChatHeader({plan, agents, host, scrub, rows}: ChatHeaderProps) {
 	const view = useSyncExternalStore(plan.subscribe, plan.get);
 	const state = useSyncExternalStore(agents.subscribe, agents.get);
 	const {columns} = useViewHost(host);
-	const terminal = useWindowSize();
+	const terminal = useTerminalSize();
 	const total = rows ?? terminal.rows;
 	const layout = headerLayout(view, state, {rows: total, columns, scrub});
 	if (layout.planMax === 0 && layout.panelMax === 0) return null;

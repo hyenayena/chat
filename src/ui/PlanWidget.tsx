@@ -1,7 +1,7 @@
 import React, {useEffect, useState, useSyncExternalStore} from 'react';
-import {Box, Text, useWindowSize} from 'ink';
+import {Box, Text} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
-import {SPINNERS, useSpinnerFrame, useViewHost} from './kit.js';
+import {SPINNERS, useSpinnerFrame, useViewHost, useTerminalSize} from './kit.js';
 import {PLAN, planVisible, planWidgetRows, type PlanView} from './plan-widget.js';
 import type {Scrub} from './tool-args.js';
 import type {Store} from './store.js';
@@ -11,7 +11,7 @@ export type PlanWidgetProps = {store: Store<PlanView>; host?: ViewHost; scrub: S
 export function PlanWidget({store, host, scrub, rows, maxRows}: PlanWidgetProps) {
 	const view = useSyncExternalStore(store.subscribe, store.get);
 	const {columns} = useViewHost(host);
-	const terminal = useWindowSize();
+	const terminal = useTerminalSize();
 	const [, setTick] = useState(0);
 	const animated = planVisible(view) && view.running && view.items.some(i => i.status === 'in_progress');
 	const spinner = useSpinnerFrame(SPINNERS.braille, 120, animated);

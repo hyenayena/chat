@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useReducer, useRef, useState} from 'react';
-import {Box, useInput, usePaste, useWindowSize, type Key} from 'ink';
+import {Box, useInput, usePaste, type Key} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
 import type {ModuleSession, PermissionDecision, PermissionRequest} from '../public.js';
 import {internalsOf} from '../module-sessions.js';
@@ -8,7 +8,7 @@ import {QuestionPrompt} from './QuestionPrompt.js';
 import {newPromptEntry, promptEntryKey, promptEntryPaste, rearmEntry, type PromptEntry} from './prompt-entry.js';
 import {ARM_MS, layoutPrompt, type QuestionPromptState, type ToolPromptState} from './prompt-state.js';
 import {promptBudget} from './chat-layout.js';
-import {useViewHost} from './kit.js';
+import {useViewHost, useTerminalSize} from './kit.js';
 
 export interface PermissionPanelProps {
 	session: ModuleSession;
@@ -26,7 +26,7 @@ export function PermissionPanel(props: PermissionPanelProps) {
 	const internal = internalsOf(session);
 	if (!internal) throw new Error('Not a module session');
 	const armMs = props.armMs ?? ARM_MS;
-	const terminal = useWindowSize();
+	const terminal = useTerminalSize();
 	const {focused, columns} = useViewHost(host);
 	const [, tick] = useReducer((n: number) => n + 1, 0);
 	const [notice, setNotice] = useState<string | undefined>(undefined);
