@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {gallerySections, registerGallerySection, styledCells, stripStyles, withColorDepth, type ColorDepth} from '../../src/kit.js';
-import {chatGallerySection, diffGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from '../../src/ui/gallery.js';
+import {chatGallerySection, diffGallerySection, layoutGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from '../../src/ui/gallery.js';
 
 const ESC = String.fromCharCode(27);
 
@@ -9,7 +9,7 @@ test('the chat section renders at 39, 79 and 159 columns within the width', asyn
 	const render = await chatGallerySection.load();
 	for (const width of [39, 79, 159]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
-			const rows = withColorDepth(depth, () => render({width, depth, ascii: false}));
+			const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii: false}));
 			assert.ok(rows.length > 12);
 			for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 		}
@@ -18,7 +18,7 @@ test('the chat section renders at 39, 79 and 159 columns within the width', asyn
 
 test('the rows hold only SGR escapes and the sample pieces', async () => {
 	const render = await chatGallerySection.load();
-	const rows = withColorDepth('256', () => render({width: 79, depth: '256', ascii: false}));
+	const rows = withColorDepth('256', () => render({width: 79, rows: 24, depth: '256', ascii: false}));
 	const rest = rows.join('\n').replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '');
 	assert.ok(!rest.includes(ESC));
 	for (const part of ['Fix the failing test', 'thinking', 'Edit', '$ npm test', 'Error: ']) assert.ok(rest.includes(part), part);
@@ -34,17 +34,17 @@ test('the diff section renders at 39, 79, 159 and 200 columns within the width',
 	const render = await diffGallerySection.load();
 	for (const width of [39, 79, 159, 200]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
-			const rows = withColorDepth(depth, () => render({width, depth, ascii: false}));
+			const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii: false}));
 			assert.ok(rows.length > 20);
 			for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 			const text = rows.map(stripStyles).join('\n');
 			assert.match(text, /⋯ 34 unchanged lines/);
 			assert.match(text, /\+\d+ lines \(ctrl\+o to expand\)/);
-			if (width >= 159) assert.ok(rows.map(stripStyles).some(r => r.split('│').length === 3));
+			if (width >= 160) assert.ok(rows.map(stripStyles).some(r => r.split('│').length === 3));
 			else assert.match(text, /side-by-side from 160 columns/);
 		}
 	}
-	const rows = withColorDepth('truecolor', () => render({width: 79, depth: 'truecolor', ascii: false}));
+	const rows = withColorDepth('truecolor', () => render({width: 79, rows: 24, depth: 'truecolor', ascii: false}));
 	assert.ok(rows.join('\n').includes('38;2;198;120;221'), 'syntax colours after the preload');
 });
 
@@ -58,7 +58,7 @@ test('the tools section renders at 39, 79, 159 and 200 columns within the width'
 	const render = await toolsGallerySection.load();
 	for (const width of [39, 79, 159, 200]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
-			const rows = withColorDepth(depth, () => render({width, depth, ascii: false}));
+			const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii: false}));
 			for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 			const text = rows.map(stripStyles).join('\n');
 			for (const part of ['Read 3 files, searched 2 patterns', 'exit 1', 'earlier lines', 'denied', '+2 lines', 'github:search_issues']) {
@@ -74,7 +74,7 @@ test('the markdown section renders at 39, 79 and 159 columns within the width', 
 	const render = await markdownGallerySection.load();
 	for (const width of [39, 79, 159]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
-			const rows = withColorDepth(depth, () => render({width, depth, ascii: false}));
+			const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii: false}));
 			const text = rows.map(stripStyles).join('\n');
 			for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 			for (const part of ['Heading one', 'nested item', '╭─ typescript', '╭─ bash', '┬', '⋯ +10 lines', '✻ thinking · 12s (ctrl+o)']) assert.ok(text.includes(part), `${width} ${depth}: ${part}`);
@@ -89,13 +89,13 @@ test('the status section renders within the width at every depth and is register
 	for (const width of [39, 79, 159]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
 			for (const ascii of [false, true]) {
-				const rows = withColorDepth(depth, () => render({width, depth, ascii}));
+				const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii}));
 				assert.ok(rows.length > 10);
 				for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 			}
 		}
 	}
-	const text = withColorDepth('none', () => render({width: 159, depth: 'none', ascii: false})).map(stripStyles).join('\n');
+	const text = withColorDepth('none', () => render({width: 159, rows: 24, depth: 'none', ascii: false})).map(stripStyles).join('\n');
 	for (const part of ['idle', 'awaiting approval', 'esc to interrupt', 'interrupted', '3 files changed']) assert.ok(text.includes(part), part);
 	assert.equal(registerGallerySection(statusGallerySection), true);
 });
@@ -105,7 +105,7 @@ test('the plan section renders within the width in every mode, with notes', asyn
 	for (const width of [39, 79, 159]) {
 		for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
 			for (const ascii of [false, true]) {
-				const rows = withColorDepth(depth, () => render({width, depth, ascii}));
+				const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii}));
 				for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 				const text = rows.map(stripStyles).join('\n');
 				assert.match(text, /Plan 2\/6/);
@@ -115,4 +115,36 @@ test('the plan section renders within the width in every mode, with notes', asyn
 			}
 		}
 	}
+});
+
+test('every chat section stays within width - 1 at 50, 100 and 160 columns and has no stray blank row', async () => {
+	const {markdownGallerySection} = await import('../../src/ui/markdown-gallery.js');
+	const sections = [chatGallerySection, diffGallerySection, toolsGallerySection, statusGallerySection, planGallerySection, markdownGallerySection, layoutGallerySection];
+	for (const section of sections) {
+		const render = await section.load();
+		const tall = section.name === 'plan' || section.name === 'layout' ? [12, 24, 40] : [24];
+		for (const width of [50, 100, 160]) {
+			for (const rows of tall) {
+				const out = withColorDepth('none', () => render({width, rows, depth: 'none', ascii: false})).map(stripStyles);
+				assert.ok(out.length > 0, `${section.name} ${width}x${rows}`);
+				for (const row of out) assert.ok(styledCells(row) <= width - 1, `${section.name} ${width}x${rows}: ${row}`);
+				const blank = out.flatMap((row, i) => (row.trim() === '' ? [i] : []));
+				if (section.name === 'markdown' || section.name === 'chat') assert.ok(blank.every((at, i) => i === 0 || at !== blank[i - 1]! + 1), `${section.name} ${width}: two blank rows in a row`);
+				else assert.deepEqual(blank, [], `${section.name} ${width}x${rows}: blank rows`);
+			}
+		}
+	}
+});
+
+test('the layout section fills the frame to the rows it is given', async () => {
+	const render = await layoutGallerySection.load();
+	for (const width of [50, 100, 160]) {
+		for (const rows of [6, 12, 24, 40]) {
+			const out = withColorDepth('none', () => render({width, rows, depth: 'none', ascii: false})).map(stripStyles);
+			assert.equal(out.length, rows, `${width}x${rows}`);
+			assert.ok(out.some(r => r.includes('transcript')) || rows <= 12, `${width}x${rows}`);
+		}
+	}
+	assert.equal(registerGallerySection(layoutGallerySection), true);
+	assert.ok(gallerySections().some(s => s.name === 'layout'));
 });

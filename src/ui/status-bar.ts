@@ -26,6 +26,7 @@ export type StatusInput = {
 	pin?: string;
 	limit?: string;
 	tasks?: Tasks;
+	panelShown?: boolean;
 	project?: string;
 	branch?: string;
 	scrub: Scrub;
@@ -106,12 +107,17 @@ function accountSegment(input: StatusInput, depth: ColorDepth): BarSegment | und
 
 function agentsSegment(input: StatusInput, o: StatusOptions): BarSegment | undefined {
 	const tasks = input.tasks ?? [];
+	const mark = glyph('toolAgent', {ascii: o.ascii === true});
+	if (input.panelShown === true) {
+		const background = tasks.filter(t => t.status === 'running' && t.background).length;
+		return background > 0 ? {forms: [`${background} in background`, `${mark} ${background}`]} : undefined;
+	}
 	const full = tasksBarText(tasks);
 	if (full === '') return undefined;
 	const running = tasks.filter(t => t.status === 'running');
 	const agents = running.filter(t => t.taskType === 'local_agent').length;
 	const count = agents > 0 ? agents : running.filter(t => t.background).length;
-	return {forms: [full, `${glyph('toolAgent', {ascii: o.ascii === true})} ${count}`]};
+	return {forms: [full, `${mark} ${count}`]};
 }
 
 function projectSegment(input: StatusInput, o: StatusOptions): BarSegment | undefined {

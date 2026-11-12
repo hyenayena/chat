@@ -1,13 +1,10 @@
-import {checklistRows, type ChecklistItem} from '../kit.js';
+import {checklistRows, rowTier, type ChecklistItem} from '../kit.js';
 import type {PlanItem} from '../public.js';
 import type {Scrub} from './tool-args.js';
 
 export const PLAN = {
-	minRows: 10,
 	minColumns: 30,
-	summaryMinRows: 24,
 	expandedMax: 10,
-	expandedShare: 0.3,
 	flashMs: 3000,
 	meterMax: 10,
 } as const;
@@ -22,7 +19,7 @@ export type PlanView = {
 	flash?: PlanFlash;
 };
 
-export type PlanLook = {columns: number; rows: number; scrub: Scrub; spinner?: string; now: number};
+export type PlanLook = {columns: number; rows: number; maxRows: number; scrub: Scrub; spinner?: string; now: number};
 
 const TITLE = 'Plan';
 
@@ -41,7 +38,8 @@ function entries(items: readonly PlanItem[], scrub: Scrub): ChecklistItem[] {
 }
 
 export function planWidgetRows(view: PlanView, look: PlanLook): string[] {
-	if (!planVisible(view) || look.rows < PLAN.minRows || look.columns < PLAN.minColumns) return [];
+	const tier = rowTier(look.rows);
+	if (!planVisible(view) || tier === 'tiny' || look.columns < PLAN.minColumns || !(look.maxRows >= 1)) return [];
 	const width = Math.max(1, look.columns - 1);
 	const live = view.flash !== undefined && look.now < view.flash.until ? view.flash : undefined;
 	const base = {
@@ -52,11 +50,13 @@ export function planWidgetRows(view: PlanView, look: PlanLook): string[] {
 		...(live !== undefined && {flash: look.scrub(live.text)}),
 		doneLabel: 'done',
 	};
-	if (view.expanded) {
-		const maxRows = Math.min(PLAN.expandedMax, Math.floor(look.rows * PLAN.expandedShare));
-		if (maxRows >= 2) return checklistRows({...base, mode: 'full', maxRows});
+	const room = Math.min(PLAN.expandedMax, Math.floor(look.maxRows));
+	if (view.expanded && room >= 2) return checklistRows({...base, mode: 'full', maxRows: room});
+	if (tier === 'tall') {
+		const summary = checklistRows({...base, mode: 'summary'});
+		if (summary.length <= look.maxRows) return summary;
 	}
-	return checklistRows({...base, mode: look.rows < PLAN.summaryMinRows ? 'line' : 'summary'});
+	return checklistRows({...base, mode: 'line'});
 }
 
 export function planViewerRows(items: readonly PlanItem[], width: number, scrub: Scrub): string[] {

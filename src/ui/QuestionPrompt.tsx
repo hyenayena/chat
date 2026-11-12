@@ -37,7 +37,7 @@ export function QuestionPrompt(props: QuestionPromptProps) {
 	if (layout.tier === 'minimal' || layout.budget < 4) {
 		return (
 			<Text color="yellow" bold wrap="truncate">
-				Question from Claude – enlarge the terminal to answer (n to dismiss)
+				{truncateCells('Question from Claude – enlarge the terminal to answer (n to dismiss)', layout.rowWidth)}
 			</Text>
 		);
 	}
@@ -45,17 +45,17 @@ export function QuestionPrompt(props: QuestionPromptProps) {
 		return (
 			<Box flexDirection="column">
 				<Text color="yellow" bold wrap="truncate">
-					Question from yena (not a permission request)
+					{truncateCells('Question from yena (not a permission request)', layout.rowWidth)}
 				</Text>
 				{layout.budget >= 4 && (
 					<Text dimColor wrap="truncate">
-						{`│ ${reveal(spec.question).replace(/\s+/g, ' ')}`}
+						{truncateCells(`│ ${reveal(spec.question).replace(/\s+/g, ' ')}`, layout.rowWidth)}
 					</Text>
 				)}
 				{state.view === 'other' ? (
 					<LabeledInput label={ANSWER} labelColor="yellow" text={reveal(state.other)} columns={layout.width} maxRows={1} />
 				) : (
-					<Text wrap="truncate">1-9 answer · o other · n dismiss</Text>
+					<Text wrap="truncate">{truncateCells('1-9 answer · o other · n dismiss', layout.rowWidth)}</Text>
 				)}
 			</Box>
 		);

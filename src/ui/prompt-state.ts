@@ -389,13 +389,16 @@ export interface PromptLayout {
 	bodyHidden: boolean;
 	pagerRows: number;
 	width: number;
+	rowWidth: number;
 	tier: 'full' | 'tiny' | 'minimal';
 }
 
-export function layoutPrompt(rows: number, columns: number, choiceRows = 5): PromptLayout {
-	const tier = rows < 4 ? 'minimal' : rows < 10 ? 'tiny' : 'full';
-	const budget = tier === 'full' ? Math.max(3, rows >= 12 ? rows - 3 : rows - 2) : Math.max(2, rows - 1);
-	const compact = budget < 14;
+export const PROMPT_ROWS = {minimal: 3, tiny: 9, compact: 14, body: 8} as const;
+
+export function layoutPrompt(budgetRows: number, columns: number, choiceRows = 5): PromptLayout {
+	const tier = budgetRows < PROMPT_ROWS.minimal ? 'minimal' : budgetRows < PROMPT_ROWS.tiny ? 'tiny' : 'full';
+	const budget = Math.max(tier === 'full' ? 3 : 2, Math.floor(budgetRows));
+	const compact = budget < PROMPT_ROWS.compact;
 	const fixed = 1 + 1 + (compact ? 1 : choiceRows) + (compact ? 0 : 1) + 2;
 	const body = Math.max(1, budget - fixed);
 	return {
@@ -403,9 +406,10 @@ export function layoutPrompt(rows: number, columns: number, choiceRows = 5): Pro
 		compactChoices: compact,
 		showHint: !compact,
 		bodyRows: body,
-		bodyHidden: budget < 8,
+		bodyHidden: budget < PROMPT_ROWS.body,
 		pagerRows: Math.max(1, budget - 2),
 		width: Math.max(10, columns - 4),
+		rowWidth: Math.max(1, Math.floor(columns) - 1),
 		tier,
 	};
 }

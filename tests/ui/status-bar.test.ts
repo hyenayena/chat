@@ -111,3 +111,18 @@ test('hostile model, account, branch and project names are scrubbed and cut', ()
 	assert.ok(!plain.includes(ESC) && !plain.includes(String.fromCharCode(7)));
 	assert.ok(!plain.includes('L'.repeat(50)));
 });
+
+test('panelShown drops the running subagents from the agents segment and keeps background tasks', () => {
+	assert.match(bar({}, 200), /2 agents/);
+	const shown = bar({panelShown: true}, 200);
+	assert.doesNotMatch(shown, /agent/);
+	assert.match(shown, /1 in background/);
+	assert.equal(bar({panelShown: true, tasks: [{status: 'running', background: false, taskType: 'local_agent'}]}, 200).includes('agent'), false, 'no segment without background tasks');
+	assert.doesNotMatch(bar({panelShown: true, tasks: []}, 200), /background|agent/);
+	assert.match(bar({panelShown: true, tasks: [{status: 'running', background: true, taskType: 'local_bash'}]}, 200), /1 in background/);
+	assert.match(bar({panelShown: true}, 60), /\b1\b/, 'the short form keeps the count');
+});
+
+test('awaiting approval stays in the status bar while the agent panel is shown', () => {
+	assert.match(bar({panelShown: true, awaiting: true}, 200), /^awaiting approval/);
+});

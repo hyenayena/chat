@@ -11,7 +11,7 @@ import {makeProvider} from './helpers/fake-provider.js';
 
 const host = (log?: ReturnType<typeof makeFakeLog>) => ({dataDir: '/tmp/chat-test', events: {emit: () => {}, on: () => () => {}}, ...(log && {log})}) as unknown as Parameters<typeof plugin>[0];
 
-const SECTIONS = ['chat', 'diff', 'tools', 'status', 'plan', 'markdown'];
+const SECTIONS = ['chat', 'diff', 'tools', 'status', 'plan', 'layout', 'markdown'];
 
 test('the plugin returns the chat and fix commands, logs the load and registers its gallery sections', async () => {
 	const log = makeFakeLog();

@@ -7,6 +7,7 @@ import {PermissionPrompt} from './PermissionPrompt.js';
 import {QuestionPrompt} from './QuestionPrompt.js';
 import {newPromptEntry, promptEntryKey, promptEntryPaste, rearmEntry, type PromptEntry} from './prompt-entry.js';
 import {ARM_MS, layoutPrompt, type QuestionPromptState, type ToolPromptState} from './prompt-state.js';
+import {promptBudget} from './chat-layout.js';
 import {useViewHost} from './kit.js';
 
 export interface PermissionPanelProps {
@@ -48,7 +49,7 @@ export function PermissionPanel(props: PermissionPanelProps) {
 
 	if (current && entryRef.current?.id !== current.id) entryRef.current = newPromptEntry(withoutAlways(current), armMs);
 	const entry = current ? entryRef.current : null;
-	const layout = layoutPrompt(terminal.rows, columns);
+	const layout = layoutPrompt(promptBudget(terminal.rows, 0), columns);
 
 	useEffect(() => {
 		if (entry) rearmEntry(entry, layout.tier, Date.now(), armMs);
@@ -68,7 +69,7 @@ export function PermissionPanel(props: PermissionPanelProps) {
 	useInput(
 		(input: string, key: Key) => {
 			if (!entry) return;
-			const res = promptEntryKey(entry, input, key, {rows: terminal.rows, columns, reveal: internal.opened.reveal, armMs, now: Date.now()});
+			const res = promptEntryKey(entry, input, key, {budget: promptBudget(terminal.rows, 0), columns, reveal: internal.opened.reveal, armMs, now: Date.now()});
 			setNotice(res.notice);
 			if (res.decision) answer(entry, res.decision, res.stopTurn);
 			tick();

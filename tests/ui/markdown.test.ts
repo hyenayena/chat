@@ -159,3 +159,12 @@ test('table row cap and a code line wider than the frame', () => {
 	assert.equal(rows.length, 3 + 200 + 1 + 1);
 	assert.equal(rows.at(-1), '⋯ +100 rows');
 });
+
+test('consecutive blank lines in the source make one blank row, and code frames have none inside', () => {
+	const rows = renderMarkdownRows('one\n\n\n\n\ntwo\n\n```js\nlet a;\n\n\nlet b;\n```\n\n\nthree', {width: 40}).rows.map(stripStyles);
+	rows.forEach((row, i) => assert.ok(!(row.trim() === '' && rows[i - 1]?.trim() === ''), `two blank rows at ${i}`));
+	const start = rows.findIndex(r => r.startsWith('╭'));
+	const end = rows.findIndex(r => r.startsWith('╰'));
+	assert.ok(start >= 0 && end > start, rows.join('\n'));
+	assert.ok(rows.slice(start, end + 1).every(r => r.trim() !== ''), 'no blank row inside the code frame');
+});

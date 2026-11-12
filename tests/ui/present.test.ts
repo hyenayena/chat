@@ -9,6 +9,7 @@ import {
 	formatThinking,
 	formatAssistantBlock,
 	formatError,
+	formatPlanNotes,
 	formatNotice,
 	formatOut,
 	formatToolBlock,
@@ -432,4 +433,9 @@ test('a long code block is capped in the chat and complete in the viewer rows', 
 	assert.equal(printed.options.actions![0]!.copy.split('\n').length, 200);
 	assert.equal(assistantRows(md, scrub, 40, {full: true}).length, 202);
 	assert.ok(assistantRows(md, scrub, 40).length < 202);
+});
+
+test('plan notes have no blank row, even when an item text spans lines', () => {
+	const text = stripStyles(formatPlanNotes([{kind: 'new', steps: 2}, {kind: 'done', text: 'One\n\nTwo'}, {kind: 'finished', done: 2, total: 2}], s => s));
+	assert.ok(text.split('\n').every(row => row.trim() !== ''), JSON.stringify(text));
 });

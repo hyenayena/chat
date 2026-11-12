@@ -3,6 +3,7 @@ import {afterEach, test} from 'node:test';
 import React from 'react';
 import {makeReveal} from '../../src/contract/reveal.js';
 import {PermissionPrompt, toolHeader} from '../../src/ui/PermissionPrompt.js';
+import {promptBudget} from '../../src/ui/chat-layout.js';
 import {initQuestionPrompt, initToolPrompt, layoutPrompt, type ToolPromptState} from '../../src/ui/prompt-state.js';
 import {optionWindow, QuestionPrompt} from '../../src/ui/QuestionPrompt.js';
 import {stringCells} from '../../src/kit.js';
@@ -26,7 +27,7 @@ const tool = (req = toolReq(), over: Partial<React.ComponentProps<typeof Permiss
 	<PermissionPrompt
 		request={req}
 		state={initToolPrompt(req, 0)}
-		layout={layoutPrompt(rows, 80)}
+		layout={layoutPrompt(promptBudget(rows, 0), 80)}
 		reveal={reveal}
 		position={1}
 		total={1}
@@ -113,14 +114,14 @@ test('reason mode shows the editor and the full view shows the pager', async () 
 	assert.doesNotMatch(pager, /Allow once/);
 });
 
-test('compact layout at 10 rows keeps header, border, body, one choices line and the status slot', async () => {
+test('compact layout at a budget of 10 rows keeps header, border, body, one choices line and the status slot', async () => {
 	const command = Array.from({length: 30}, (_, i) => `line ${i}`).join('\n');
-	const frame = await show(tool(toolReq({input: {command}}), {layout: layoutPrompt(10, 80)}, 10), {columns: 80, rows: 10});
+	const frame = await show(tool(toolReq({input: {command}}), {layout: layoutPrompt(10, 80)}, 10), {columns: 80, rows: 14});
 	const lines = frame.replace(/\n+$/, '').split('\n');
-	assert.ok(lines.length <= 7, `${lines.length} rows`);
+	assert.ok(lines.length <= 9, `${lines.length} rows`);
 	assert.match(frame, /more rows \(press v to view\)/);
 	assert.match(frame, /❯ Allow once \(y\)/);
-	const tiny = await show(tool(toolReq({input: {command}}), {layout: layoutPrompt(7, 40)}, 7), {columns: 40, rows: 7});
+	const tiny = await show(tool(toolReq({input: {command}}), {layout: layoutPrompt(promptBudget(7, 0), 40)}, 7), {columns: 40, rows: 7});
 	assert.match(tiny, /\(press v to view\)/);
 });
 
@@ -183,7 +184,7 @@ test('a symlink target shows the resolved path in the prompt, the tiny form and 
 		always: false,
 	});
 	assert.match(await show(tool(req)), /│ resolves to: \/app\/package\.json/);
-	assert.match(await show(tool(req, {layout: layoutPrompt(6, 80)}, 6), {columns: 80, rows: 6}), /resolves to: \/app\/package\.json/);
+	assert.match(await show(tool(req, {layout: layoutPrompt(promptBudget(6, 0), 80)}, 6), {columns: 80, rows: 6}), /resolves to: \/app\/package\.json/);
 	const full: ToolPromptState = {...initToolPrompt(req, 0), view: 'full'};
 	assert.match(await show(tool(req, {state: full})), /resolves to: \/app\/package\.json/);
 	assert.doesNotMatch(await show(tool(toolReq({toolName: 'Write', path: '/app/a', input: {}}))), /resolves to/);

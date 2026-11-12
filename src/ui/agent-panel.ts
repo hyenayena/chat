@@ -1,8 +1,8 @@
-import {boxRows, frameAround, gridLayout, joinBlocks, type BoxBadge, type SpanRow} from '../kit.js';
+import {boxRows, frameAround, gridLayout, joinBlocks, rowTier, type BoxBadge, type SpanRow} from '../kit.js';
 import type {AgentBox, AgentEntry, AgentsState} from './agents.js';
 import {shortModel, toolOneLiner, verbFor, type Scrub} from './present.js';
 
-export type PanelLook = {columns: number; rows: number; scrub: Scrub; spinner?: string; corner?: string};
+export type PanelLook = {columns: number; rows: number; maxRows: number; scrub: Scrub; spinner?: string; corner?: string};
 
 type Place = {id: string; x0: number; x1: number};
 type Unit = {lines: SpanRow[]; places: Place[]};
@@ -19,8 +19,6 @@ export type PanelLayout = {
 };
 
 export const PANEL = {
-	minRows: 12,
-	share: 0.4,
 	minWidth: 12,
 	minBoxWidth: 28,
 	fullHeight: 7,
@@ -157,8 +155,8 @@ const countBoxes = (units: Unit[]): number => units.reduce((n, u) => n + u.place
 
 const fitUnits = (state: AgentsState, look: PanelLook): {units: Unit[]; budget: number; fits: boolean} | undefined => {
 	const width = Math.floor(look.columns) - 1;
-	if (state.boxes.size === 0 || !(look.rows >= PANEL.minRows) || !(width >= PANEL.minWidth)) return undefined;
-	const budget = Math.floor(look.rows * PANEL.share);
+	if (state.boxes.size === 0 || rowTier(look.rows) === 'tiny' || !(look.maxRows >= PANEL.tinyHeight) || !(width >= PANEL.minWidth)) return undefined;
+	const budget = Math.floor(look.maxRows);
 	const bands = bandsOf(state);
 	let units = unitsFor(state, bands, width, PANEL.fullHeight, look);
 	if (linesOf(units) > budget) units = unitsFor(state, bands, width, PANEL.shortHeight, look);

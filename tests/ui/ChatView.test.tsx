@@ -9,7 +9,7 @@ import {makeReveal} from '../../src/contract/reveal.js';
 import {armExpiry, BUSY_HINT, ChatView, clearSentHistory, ESC_AGAIN_MS, ESC_CONFIRM_AFTER_MS, escapeInterrupts, MAX_QUEUED, type ChatViewProps} from '../../src/ui/ChatView.js';
 import {createChatElement} from '../../src/ui/mount.js';
 import {WORKING_VERBS} from '../../src/ui/present.js';
-import {stripStyles} from '../../src/kit.js';
+import {liveRowCap, stripStyles} from '../../src/kit.js';
 import {fakeController, fakePin, mountHarness, questionReq, toolReq, type FakeController} from './testkit.js';
 
 const SECRET = 'sk-ant-oat-TESTVALUE0123456789abcdef';
@@ -276,7 +276,8 @@ test('tiny terminal does not crash and keeps the status bar', async () => {
 	await t.settle(60);
 	const frame = t.lastFrame();
 	assert.ok(frame.split('\n').length < 6);
-	assert.match(frame, /running/);
+	assert.match(frame, /Whooping|0\.0s/, 'the status bar stays');
+	assert.doesNotMatch(frame, /tools? running/, 'the running tools are hidden below 12 rows');
 });
 
 test('a secret straddling the args cut is fully redacted in the tool line', async () => {
@@ -487,7 +488,7 @@ test('long lines wrap and large commands and diffs fit the live region', async (
 	for (const rows of [24, 10]) {
 		const command = Array.from({length: 100}, (_, i) => `echo line ${i}`).join('\n');
 		const bash = await withPrompt(toolReq({input: {command}}), {columns: 80, rows});
-		assert.ok(frameRows(bash.lastFrame()) <= rows - 2, `bash rows=${rows} h=${frameRows(bash.lastFrame())}`);
+		assert.ok(frameRows(bash.lastFrame()) <= liveRowCap(rows), `bash rows=${rows} h=${frameRows(bash.lastFrame())}`);
 		assert.equal(bar(bash), 'awaiting approval · app');
 
 		const preview = {
@@ -501,7 +502,7 @@ test('long lines wrap and large commands and diffs fit the live region', async (
 			toolReq({toolName: 'Edit', path: '/app/x.ts', input: {file_path: '/app/x.ts'}, always: false, preview}),
 			{columns: 80, rows},
 		);
-		assert.ok(frameRows(edit.lastFrame()) <= rows - 2, `edit rows=${rows} h=${frameRows(edit.lastFrame())}`);
+		assert.ok(frameRows(edit.lastFrame()) <= liveRowCap(rows), `edit rows=${rows} h=${frameRows(edit.lastFrame())}`);
 		assert.equal(bar(edit), 'awaiting approval · app');
 	}
 });
@@ -1600,4 +1601,59 @@ test('Ctrl+O ends with the files of the last turn', async () => {
 	const frame = plainFrame(t);
 	assert.match(frame, /Changed in the last turn/);
 	assert.match(frame, /✎ src\/a\.ts +\+3 −1/);
+});
+
+test('a busy live frame stays below rows and within columns - 1 at 10, 24 and 40 rows', async () => {
+	for (const rows of [10, 24, 40]) {
+		for (const columns of [40, 100]) {
+			const t = setup({columns, rows});
+			t.controller.setState('running');
+			t.controller.ui({
+				kind: 'plan',
+				items: Array.from({length: 8}, (_, i) => ({id: String(i), content: `Step ${i}`, status: i < 2 ? ('completed' as const) : i === 2 ? ('in_progress' as const) : ('pending' as const)})),
+			});
+			for (const id of ['a1', 'a2', 'a3']) t.controller.ui({kind: 'tool-use', toolUseId: id, name: 'Agent', input: {subagent_type: `Worker${id}`, description: 'does a thing'}});
+			for (let i = 0; i < 4; i++) t.controller.ui({kind: 'tool-use', toolUseId: `t${i}`, name: 'Bash', input: {command: `cmd ${i}`}});
+			t.controller.ui({kind: 'text-delta', text: 'tail line\n'.repeat(40)});
+			t.press(`${PASTE_START}${'long input\n'.repeat(5)}${PASTE_END}`);
+			await t.settle(60);
+			const lines = plainFrame(t).replace(/\n+$/, '').split('\n');
+			assert.ok(lines.length <= rows - 1, `${columns}x${rows}: ${lines.length} rows`);
+			for (const line of lines) assert.ok([...line].length <= columns - 1, `${columns}x${rows}: ${JSON.stringify(line)}`);
+			assert.match(lines.at(-1)!, /esc to interrupt|Whooping|\d+s/, `${columns}x${rows}: the status bar is the last row`);
+		}
+	}
+});
+
+test('the live frame has no empty rule, tool or header block when nothing fills it', async () => {
+	const t = setup({columns: 80, rows: 40});
+	await t.settle(30);
+	const lines = plainFrame(t).replace(/\n+$/, '').split('\n');
+	assert.equal(lines.filter(l => /^─+$/.test(l)).length, 2, 'the rules around the input');
+	assert.ok(lines.every(l => l.trim() !== ''), 'no blank row in the idle frame');
+	const small = setup({columns: 80, rows: 8});
+	await small.settle(30);
+	const tiny = plainFrame(small).replace(/\n+$/, '').split('\n');
+	assert.ok(tiny.length <= 2, `${tiny.length} rows at 8 rows`);
+	assert.equal(tiny.filter(l => /^─+$/.test(l)).length, 0);
+});
+
+test('the transcript never has two blank rows in a row, nor a blank first or last row in a block', async () => {
+	const t = setup();
+	t.controller.setState('running');
+	t.controller.ui({kind: 'tool-use', toolUseId: 'b', name: 'Bash', input: {command: 'ls'}});
+	t.controller.ui({kind: 'tool-result', toolUseId: 'b', isError: false, text: '\n\nfirst\n\n\nsecond\n\n'});
+	t.controller.ui({kind: 'text', messageId: 'm1', text: '\n\nHello\n\n\n\nthere\n\n'});
+	t.controller.ui({kind: 'plan', items: [{id: '1', content: 'One\n\nTwo', status: 'completed' as const}]});
+	t.controller.emit({type: 'turn-end', outcome: 'error', error: 'it broke'});
+	t.controller.setState('idle');
+	await t.settle(40);
+	assert.ok(t.printed.length > 1);
+	for (const block of t.printed) {
+		const rows = stripStyles(block).split('\n');
+		assert.notEqual(rows[0]!.trim(), '', JSON.stringify(block));
+		assert.notEqual(rows.at(-1)!.trim(), '', JSON.stringify(block));
+	}
+	const rows = t.raw.flatMap(block => stripStyles(block).split('\n'));
+	rows.forEach((row, i) => assert.ok(!(row.trim() === '' && rows[i - 1]?.trim() === ''), `two blank rows at ${i}: ${JSON.stringify(rows.slice(Math.max(0, i - 2), i + 2))}`));
 });

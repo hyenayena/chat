@@ -92,6 +92,7 @@ for (const [name, request] of Object.entries(hostile)) {
 				);
 				cleanup.push(() => h.unmount());
 				await h.settle(60);
+				for (let i = 0; i < 40 && !h.lastFrame().includes('awaiting approval'); i++) await h.settle(50);
 				const frame = h.lastFrame();
 				const lines = frame.replace(/\n+$/, '').split('\n');
 				const tag = `${name} ${rows}x${columns}`;

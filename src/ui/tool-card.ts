@@ -65,7 +65,10 @@ function hangingBody(text: string, scrub: Scrub, width: number): string[] {
 	const body = scrub(text.slice(0, RESULT_INPUT_CAP)).replace(/\n+$/, '');
 	if (body.trim() === '') return [];
 	const inner = Math.max(1, width - RESULT_PREFIX.length);
-	const rows = body.split('\n').flatMap(l => wrapRows(l, inner, {mode: 'char'}));
+	const rows = body
+		.split('\n')
+		.filter(l => l.trim() !== '')
+		.flatMap(l => wrapRows(l, inner, {mode: 'char'}));
 	let shown = rows;
 	if (rows.length > TOOL_RESULT_ROWS) {
 		const kept = TOOL_RESULT_ROWS - 1;
@@ -127,7 +130,7 @@ function bashCard(t: ToolLike, scrub: Scrub, width: number): string {
 	if (noCode) rows.push(reasonRow(t.text, scrub, width));
 	const multi = output.split('\n').filter(l => l.trim() !== '').length > 1;
 	if (output.trim() !== '' && (!noCode || multi)) {
-		rows.push(...ruledRows(output.split('\n'), {width, maxRows: BASH_TAIL_ROWS, keep: 'tail'}));
+		rows.push(...ruledRows(output.split('\n').filter(l => l.trim() !== ''), {width, maxRows: BASH_TAIL_ROWS, keep: 'tail'}));
 	}
 	return rows.join('\n');
 }

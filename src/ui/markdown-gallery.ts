@@ -41,7 +41,7 @@ export const markdownGallerySection: GallerySection = {
 		const [p, hl] = await Promise.all([import('./present.js'), import('./highlight.js')]);
 		await hl.preloadHighlighter();
 		return ({width}) => {
-			const rows = (md: string): string[] => p.formatAssistantBlock(md, scrub, false, width).split('\n');
+			const rows = (md: string): string[] => p.formatAssistantBlock(md, scrub, false, Math.max(1, width - 1)).split('\n');
 			return [
 				...rows(intro),
 				...rows(typescript),

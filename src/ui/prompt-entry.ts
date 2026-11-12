@@ -22,7 +22,7 @@ export type PromptEntry =
 	| {id: string; request: Extract<PermissionRequest, {kind: 'tool'}>; state: ToolPromptState; armedSig: string}
 	| {id: string; request: Extract<PermissionRequest, {kind: 'question'}>; state: QuestionPromptState; armedSig: string};
 
-export type PromptKeyContext = {rows: number; columns: number; reveal: Reveal; armMs: number; now: number};
+export type PromptKeyContext = {budget: number; columns: number; reveal: Reveal; armMs: number; now: number};
 export type PromptKeyResult = {notice?: string; decision?: PermissionDecision; stopTurn?: boolean};
 
 const promptSig = (p: PromptEntry, tier: string): string =>
@@ -40,7 +40,7 @@ export function newPromptEntry(head: PermissionRequest, armMs = ARM_MS): PromptE
 
 export function promptEntryKey(p: PromptEntry, input: string, key: Key, ctx: PromptKeyContext): PromptKeyResult {
 	const pk = normalizeKey(input, key);
-	const layout = layoutPrompt(ctx.rows, ctx.columns);
+	const layout = layoutPrompt(ctx.budget, ctx.columns);
 	if (p.request.kind === 'tool') {
 		const state = p.state as ToolPromptState;
 		let pager;

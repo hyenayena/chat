@@ -1,4 +1,5 @@
-import type {GallerySection} from '../kit.js';
+import {COLUMN_BREAKPOINTS, columnTier, fixedRowBudget, paintTone, ROW_BREAKPOINTS, rowTier, SIDE_BY_SIDE_MIN_WIDTH, sliceStyledCells, styledCells, type ColumnTier, type GallerySection} from '../kit.js';
+import {PLAN} from './plan-widget.js';
 
 const scrub = (s: string): string => s;
 
@@ -11,7 +12,8 @@ export const chatGallerySection: GallerySection = {
 	description: 'The pieces of the claude chat as they are drawn today',
 	load: async () => {
 		const p = await import('./present.js');
-		return ({width}) => {
+		return ({width: columns}) => {
+			const width = Math.max(1, columns - 1);
 			const blocks = [
 				p.formatUserLine('Fix the failing test in parse.ts', scrub),
 				p.formatAssistantBlock('Here is the plan:\n\n- read the **test**\n- patch `parse()`', scrub, false, width),
@@ -61,14 +63,26 @@ export const diffGallerySection: GallerySection = {
 		const edit = {name: 'Edit', input: {file_path: 'src/parse.ts'}, isError: false, patch: editPatch};
 		const created = {name: 'Write', input: {file_path: 'src/load.ts', content: newFile}, isError: false, patch: {hunks: [], created: true as const}};
 		const long = {name: 'Edit', input: {file_path: 'src/values.ts'}, isError: false, patch: longPatch};
-		return ({width}) => {
-			const unified = card.formatFileCard(edit, scrub, Math.min(width, 158));
+		return ({width: columns}) => {
+			const width = Math.max(1, columns - 1);
+			const unified = card.formatFileCard(edit, scrub, Math.min(width, SIDE_BY_SIDE_MIN_WIDTH - 1));
 			const side =
-				width >= 159 ? card.formatFileCard(edit, scrub, width) : `${p.sgr().muted}side-by-side from 160 columns${p.sgr().reset}`;
+				width >= SIDE_BY_SIDE_MIN_WIDTH ? card.formatFileCard(edit, scrub, width) : `${p.sgr().muted}side-by-side from ${COLUMN_BREAKPOINTS.sideBySide} columns${p.sgr().reset}`;
 			const blocks = [unified, side, card.formatFileCard(created, scrub, width), card.formatFileCard(long, scrub, width)];
 			return blocks.flatMap(b => b.split('\n'));
 		};
 	},
+};
+
+const TIER_WIDTHS: readonly (readonly [ColumnTier, number])[] = [
+	['compact', 40],
+	['normal', 80],
+	['wide', 120],
+];
+
+const tierSamples = (width: number): (readonly [ColumnTier, number])[] => {
+	const fit = TIER_WIDTHS.filter(([, w]) => w <= width);
+	return fit.length > 0 ? fit : [[columnTier(width), width]];
 };
 
 const testTail = ['> yena@1.0.0 test', '> node --test', ...Array.from({length: 9}, (_, i) => `ok ${i + 1} - case ${i + 1}`), 'not ok 10 - parses an empty file', '  AssertionError: expected 1 to equal 0'].join('\n');
@@ -108,7 +122,8 @@ export const toolsGallerySection: GallerySection = {
 			ok('mcp__github__search_issues', {query: 'tool cards'}, '3 results'),
 			fail('TodoWrite', {todos: []}, '<tool_use_error>InputValidationError: todos is required</tool_use_error>'),
 		];
-		return ({width}) => {
+		return ({width: columns}) => {
+			const width = Math.max(1, columns - 1);
 			const running = card.runningToolRow({id: 'r1', name: 'Agent', input: {subagent_type: 'coder', description: 'Fix the parser'}, elapsedSeconds: 0, startedAt: 1000, activity: {name: 'Read', input: {file_path: 'src/parse.ts'}}}, scrub, width, '⠋', 15_000);
 			const blocks = [running, card.formatToolCard(read('present.ts', 120, 1000), scrub, width), card.formatToolGroup(fold, scrub, width), ...items.map(t => card.formatToolCard(t, scrub, width))];
 			return blocks.flatMap(b => b.split('\n'));
@@ -132,7 +147,7 @@ const sampleSummary = {
 export const statusGallerySection: GallerySection = {
 	name: 'status',
 	title: 'Status bar and turn summary',
-	description: 'The status bar at 40, 80 and 120 columns (idle, running, awaiting approval, high context) and the summary row after a turn',
+	description: 'The status bar in the compact, normal and wide column tiers (idle, running, awaiting approval, high context) and the summary row after a turn',
 	load: async () => {
 		const [bar, summary] = await Promise.all([import('./status-bar.js'), import('./turn-summary.js')]);
 		const base = {
@@ -160,11 +175,10 @@ export const statusGallerySection: GallerySection = {
 		] as const;
 		const outcomes = ['ok', 'interrupted', 'error'] as const;
 		return ({width, depth, ascii}) => {
-			const widths = [40, 80, 120].filter(w => w <= width);
 			const rows: string[] = [];
 			for (const [name, input] of states) {
 				rows.push(name);
-				for (const w of widths.length > 0 ? widths : [width]) rows.push(bar.chatStatusRow(input, w - 1, {frame: ascii ? '*' : '✻', depth, ascii}));
+				for (const [, w] of tierSamples(width)) rows.push(bar.chatStatusRow(input, w - 1, {frame: ascii ? '*' : '✻', depth, ascii}));
 			}
 			rows.push('turn summary');
 			for (const outcome of outcomes) rows.push(summary.turnSummaryRow(sampleSummary, outcome, width - 1, {depth, ascii}));
@@ -186,18 +200,26 @@ export const planGallerySection: GallerySection = {
 		const items = (done: number, active: boolean, n = planSteps.length) =>
 			planSteps.slice(0, n).map((text, i) => ({text: i === done && active ? 'Patching parse()' : text, state: i < done ? ('done' as const) : i === done && active ? ('active' as const) : ('open' as const)}));
 		const many = Array.from({length: 24}, (_, i) => ({text: `Step ${i + 1}`, state: i < 9 ? ('done' as const) : i === 9 ? ('active' as const) : ('open' as const)}));
-		return ({width, depth, ascii}) => {
+		return ({width, rows: height, depth, ascii}) => {
 			const rows: string[] = [];
 			const base = {title: 'Plan', depth, ascii};
-			const widths = [40, 80, 120].filter(w => w <= width);
-			for (const w of widths.length > 0 ? widths : [width]) {
-				rows.push(`summary, running, ${w} columns`, ...kit.checklistRows({...base, items: items(1, true), width: w - 1, mode: 'summary', spinner: ascii ? '|' : '⠹'}));
-				rows.push(`summary, idle, ${w} columns`, ...kit.checklistRows({...base, items: items(1, true), width: w - 1, mode: 'summary'}));
+			const tier = rowTier(height);
+			const spinner = ascii ? '|' : '⠹';
+			const note = (text: string): string => paintTone(text, 'muted', depth);
+			if (tier === 'tiny') rows.push(note(`The plan is hidden below ${ROW_BREAKPOINTS.short} rows (${height} rows here)`));
+			if (tier === 'tall') {
+				for (const [, w] of tierSamples(width)) {
+					rows.push(`summary, running, ${w} columns`, ...kit.checklistRows({...base, items: items(1, true), width: w - 1, mode: 'summary', spinner}));
+					rows.push(`summary, idle, ${w} columns`, ...kit.checklistRows({...base, items: items(1, true), width: w - 1, mode: 'summary'}));
+				}
+			} else if (tier !== 'tiny') {
+				rows.push(note(`The summary needs ${ROW_BREAKPOINTS.tall} rows (${height} rows here)`));
 			}
-			rows.push('line mode', ...kit.checklistRows({...base, items: items(1, true), width: Math.min(width, 80) - 1, mode: 'line', spinner: ascii ? '|' : '⠹'}));
-			rows.push('expanded, windowed', ...kit.checklistRows({...base, items: many, width: width - 1, mode: 'full', maxRows: 8}));
-			rows.push('short highlight', ...kit.checklistRows({...base, items: items(2, true), width: Math.min(width, 80) - 1, mode: 'summary', flash: 'Patch parse()', spinner: ascii ? '|' : '⠹'}));
-			rows.push('all done', ...kit.checklistRows({...base, items: items(planSteps.length, false), width: Math.min(width, 80) - 1, mode: 'summary', doneLabel: 'done'}));
+			rows.push('line mode', ...kit.checklistRows({...base, items: items(1, true), width: Math.min(width, 80) - 1, mode: 'line', spinner}));
+			const room = Math.min(PLAN.expandedMax, Math.max(2, fixedRowBudget(height) - 3));
+			rows.push(`expanded, windowed to ${room} rows`, ...kit.checklistRows({...base, items: many, width: width - 1, mode: 'full', maxRows: room}));
+			rows.push('short highlight', ...kit.checklistRows({...base, items: items(2, true), width: Math.min(width, 80) - 1, mode: 'line', flash: 'Patch parse()', spinner}));
+			rows.push('all done', ...kit.checklistRows({...base, items: items(planSteps.length, false), width: Math.min(width, 80) - 1, mode: 'line', doneLabel: 'done'}));
 			rows.push('transcript notes');
 			const notes = [
 				{kind: 'new' as const, steps: 6},
@@ -208,6 +230,85 @@ export const planGallerySection: GallerySection = {
 			];
 			rows.push(...present.formatPlanNotes(notes, scrub).split('\n'));
 			return rows;
+		};
+	},
+};
+
+const layoutPlan = {
+	items: [
+		{content: 'Read the parser', status: 'completed' as const},
+		{content: 'Patch parse()', status: 'in_progress' as const, activeForm: 'Patching parse()'},
+		{content: 'Run the tests', status: 'pending' as const},
+		{content: 'Update the docs', status: 'pending' as const},
+	],
+	running: true,
+	stale: false,
+	expanded: false,
+};
+
+const streamed = [
+	'The parser splits on a bare newline, so a file saved on Windows',
+	'keeps a trailing carriage return on every row.',
+	'I will split on an optional carriage return instead, then',
+	'run the tests again to confirm the failure is gone.',
+	'After that the docs only need a one-line note.',
+];
+
+export const layoutGallerySection: GallerySection = {
+	name: 'layout',
+	title: 'Chat layout',
+	description: 'A mock chat frame laid out by the real row allocator at --width and --rows',
+	load: async () => {
+		const [layout, agents, bar, card, present] = await Promise.all([import('./chat-layout.js'), import('./agents.js'), import('./status-bar.js'), import('./tool-card.js'), import('./present.js')]);
+		const spawn = (id: string, type: string, description: string) =>
+			({type: 'ui', event: {kind: 'tool-use', toolUseId: id, name: 'Agent', input: {subagent_type: type, description}}}) as const;
+		const state = [spawn('a1', 'coder', 'Fix the parser'), spawn('a2', 'tester', 'Run the suite')].reduce((s, e) => agents.reduceAgents(s, e), agents.initialAgents());
+		const tools = [
+			{id: 't1', name: 'Bash', input: {command: 'npm test'}, elapsedSeconds: 12, startedAt: 1000},
+			{id: 't2', name: 'Read', input: {file_path: 'src/parse.ts'}, elapsedSeconds: 1, startedAt: 14_000},
+			{id: 't3', name: 'Grep', input: {pattern: 'split'}, elapsedSeconds: 1, startedAt: 14_000},
+		];
+		const status = {
+			phase: 'running' as const,
+			status: null,
+			awaiting: false,
+			elapsedMs: 72_000,
+			quietMs: 0,
+			verb: 'Sniffing',
+			model: 'claude-opus-4-5-20251101',
+			context: {used: 96_000, limit: 200_000},
+			scrub,
+		};
+		return ({width, rows, depth, ascii}) => {
+			const look = {rows, columns: width, scrub};
+			const head = layout.headerLayout(layoutPlan, state, look);
+			const live = layout.liveLayout({
+				rows,
+				headerHeight: head.height,
+				inputNeeded: 1,
+				notice: 0,
+				menu: 0,
+				vim: false,
+				queued: 0,
+				tools: tools.length,
+				tail: streamed.length,
+				hint: true,
+			});
+			const cut = (row: string): string => (styledCells(row) > width - 1 ? sliceStyledCells(row, 0, Math.max(0, width - 1)) : row);
+			const rule = (ascii ? '-' : '─').repeat(Math.max(1, width - 1));
+			const frame = [
+				...head.planRows,
+				...head.panel.rows.map(r => r.map(s => s.text).join('')),
+				...(live.tail > 0 ? streamed.slice(-live.tail) : []),
+				...tools.slice(0, live.tools).map(t => card.runningToolRow(t, scrub, width - 1, ascii ? '*' : '⠋', 15_000)),
+				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
+				paintTone('> ', 'muted', depth),
+				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
+				...(live.hint > 0 ? [paintTone(`  ${present.modeHint('acceptEdits')}`, 'muted', depth)] : []),
+				bar.chatStatusRow({...status, panelShown: head.panel.height > 0}, width - 1, {frame: ascii ? '*' : '✻', depth, ascii}),
+			];
+			const filler = Array.from({length: Math.max(0, rows - frame.length)}, () => paintTone('· transcript ·', 'muted', depth));
+			return [...filler, ...frame].map(cut);
 		};
 	},
 };

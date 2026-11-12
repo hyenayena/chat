@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {PlanItem} from '../../src/public.js';
-import {styledCells, stripStyles, withColorDepth} from '../../src/kit.js';
+import {ROW_BREAKPOINTS, styledCells, stripStyles, withColorDepth} from '../../src/kit.js';
 import {formatOut, formatToolBlock, toolHeader} from '../../src/ui/present.js';
 import {PLAN, planDone, planViewerRows, planVisible, planWidgetRows, type PlanView} from '../../src/ui/plan-widget.js';
 
@@ -15,7 +15,7 @@ const items: PlanItem[] = [
 	{id: '4', content: 'Ship', status: 'pending'},
 ];
 const view = (patch: Partial<PlanView> = {}): PlanView => ({items, running: true, stale: false, expanded: false, ...patch});
-const look = (patch: Partial<Parameters<typeof planWidgetRows>[1]> = {}) => ({columns: 80, rows: 30, scrub: id, spinner: '⠹', now: 0, ...patch});
+const look = (patch: Partial<Parameters<typeof planWidgetRows>[1]> = {}) => ({columns: 80, rows: 30, maxRows: 10, scrub: id, spinner: '⠹', now: 0, ...patch});
 const rows = (v: PlanView, l = look()): string[] => withColorDepth('none', () => planWidgetRows(v, l).map(stripStyles));
 
 test('visibility: no plan, stale, and a finished plan once idle are hidden', () => {
@@ -34,22 +34,35 @@ test('summary at 24 rows or more: header, active form with the spinner, next ite
 	assert.deepEqual(rows(view({running: false})), ['☰ Plan 1/4 ▰▱▱▱', '  › Writing tests', '  ○ Update the docs']);
 });
 
-test('below 24 rows it collapses to one row; below 10 rows or 30 columns it is hidden', () => {
-	assert.equal(rows(view(), look({rows: 23})).length, 1);
-	assert.match(rows(view(), look({rows: 23, columns: 100}))[0]!, /^☰ Plan 1\/4 ▰▱▱▱ · ⠹ Writing tests · next: Update the docs$/);
-	assert.deepEqual(rows(view(), look({rows: PLAN.minRows - 1})), []);
+test('below the tall tier it collapses to one row; below the short tier or 30 columns it is hidden', () => {
+	assert.equal(rows(view(), look({rows: ROW_BREAKPOINTS.tall - 1})).length, 1);
+	assert.match(rows(view(), look({rows: ROW_BREAKPOINTS.tall - 1, columns: 100}))[0]!, /^☰ Plan 1\/4 ▰▱▱▱ · ⠹ Writing tests · next: Update the docs$/);
+	assert.deepEqual(rows(view(), look({rows: ROW_BREAKPOINTS.short - 1})), []);
 	assert.deepEqual(rows(view(), look({columns: PLAN.minColumns - 1})), []);
-	assert.equal(rows(view(), look({rows: PLAN.minRows, columns: PLAN.minColumns})).length, 1);
+	assert.equal(rows(view(), look({rows: ROW_BREAKPOINTS.short, columns: PLAN.minColumns})).length, 1);
 });
 
-test('expanded lists every item within min(10, 30% of rows) and counts the rest', () => {
+test('mode follows maxRows: expanded from 2, summary only on the tall tier when it fits, else the line, else nothing', () => {
+	assert.equal(rows(view(), look({maxRows: 3})).length, 3, 'summary fits');
+	assert.equal(rows(view(), look({maxRows: 2})).length, 1, 'summary does not fit: the line');
+	assert.equal(rows(view(), look({maxRows: 1})).length, 1);
+	assert.deepEqual(rows(view(), look({maxRows: 0})), []);
+	assert.equal(rows(view({items: items.slice(0, 1), expanded: true}), look({maxRows: 2})).length, 2, 'expanded from 2 rows');
+	assert.equal(rows(view({expanded: true}), look({maxRows: 2})).length, 2, 'a longer list shows the header and the count');
+	assert.equal(rows(view({expanded: true}), look({maxRows: 3})).length, 3);
+	assert.equal(rows(view({expanded: true}), look({maxRows: 1})).length, 1, 'one row: the line');
+	assert.equal(rows(view({expanded: true}), look({rows: ROW_BREAKPOINTS.tall - 1, maxRows: 5})).length, 5, 'expanded on a shorter tier');
+	assert.equal(rows(view(), look({rows: ROW_BREAKPOINTS.tall - 1, maxRows: 5})).length, 1, 'no summary below the tall tier');
+});
+
+test('expanded lists every item within min(10, maxRows) and counts the rest', () => {
 	const many: PlanItem[] = Array.from({length: 25}, (_, i) => ({id: String(i), content: `Step ${i}`, status: i < 10 ? 'completed' : i === 10 ? 'in_progress' : 'pending'}));
-	const out = rows(view({items: many, expanded: true}));
+	const out = rows(view({items: many, expanded: true}), look({maxRows: 9}));
 	assert.equal(out.length, 9);
 	assert.ok(out.some(r => r.includes('Step 10')));
 	assert.match(out.at(-1)!, /… \+\d+ more/);
 	assert.equal(rows(view({expanded: true})).length, 5, 'a short list shows whole');
-	assert.equal(rows(view({items: many, expanded: true}), look({rows: 40})).length, 10);
+	assert.equal(rows(view({items: many, expanded: true}), look({rows: 40, maxRows: 40})).length, PLAN.expandedMax);
 });
 
 test('the flash shows ok text on the header row until it expires', () => {

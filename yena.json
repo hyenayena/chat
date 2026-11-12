@@ -1,6 +1,6 @@
 {
 	"name": "chat",
-	"version": "0.5.2",
+	"version": "0.5.3",
 	"description": "Provider-neutral chat: the chat contract and the chat UI",
 	"runtime": "node",
 	"entry": "src/index.ts",
@@ -8,7 +8,7 @@
 	"dependencies": {
 		"core": {
 			"source": "core",
-			"version": "^0.22.2"
+			"version": "^0.22.3"
 		}
 	}
 }

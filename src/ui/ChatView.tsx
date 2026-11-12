@@ -7,13 +7,15 @@ import {limitIndicator, systemClock, type Clock} from '../public.js';
 import {MODE_CYCLE} from '../public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest} from '../public.js';
 import {sanitizeMultilineInput, truncateCells, wrapRows} from '../kit.js';
-import {layoutPanel, navigate, revealAgent, type PanelMove} from './agent-panel.js';
+import {navigate, revealAgent, type PanelMove} from './agent-panel.js';
+import {headerLayout, liveLayout, promptBudget, viewerHeight} from './chat-layout.js';
 import {createAgentStore} from './agent-store.js';
 import {agentViewLines} from './agent-view.js';
 import {focusAgent, initialAgents, reconcileAgents, reduceAgents, seedFromTasks} from './agents.js';
 import {ChatHeader} from './ChatHeader.js';
+import {tidyBlock} from './print-block.js';
 import {createStore} from './store.js';
-import {PLAN, planViewerRows, planWidgetRows, type PlanView} from './plan-widget.js';
+import {PLAN, planViewerRows, type PlanView} from './plan-widget.js';
 import {headerHost} from './view-header.js';
 import {editorReduce, emptyEditor, MAX_INPUT, type EditorAction, type EditorState} from './editor.js';
 import {cursorFromClick, InputLine, inputRowsNeeded} from './InputLine.js';
@@ -137,16 +139,20 @@ export function ChatView(props: ChatViewProps) {
 	const gapRef = useRef(true);
 	const print = useCallback(
 		(text: string, options?: PrintOptions) => {
+			const block = tidyBlock(text, options);
+			if (!block) return;
 			if (gapRef.current) printRaw(' ');
-			printRaw(text, options);
+			printRaw(block.text, block.options);
 			gapRef.current = true;
 		},
 		[printRaw],
 	);
 	const printNotice = useCallback(
 		(text: string, options?: PrintOptions) => {
+			const block = tidyBlock(text, options);
+			if (!block) return;
 			if (gapRef.current) printRaw(' ');
-			printRaw(text, options);
+			printRaw(block.text, block.options);
 			gapRef.current = false;
 		},
 		[printRaw],
@@ -208,13 +214,15 @@ export function ChatView(props: ChatViewProps) {
 	if (!planRef.current) planRef.current = createStore<PlanView>({items: tRef.current.plan, running: false, stale: false, expanded: false});
 	const planStore = planRef.current;
 	const planState = useSyncExternalStore(planStore.subscribe, planStore.get);
-	const planRowsFor = (cols: number, height: number) => planWidgetRows(planStore.get(), {columns: cols, rows: height, scrub, now: 0}).length;
-	const panelOf = (cols: number, height: number) => layoutPanel(agents.get(), {columns: cols, rows: height - planRowsFor(cols, height), scrub});
-	const focusBox = (focus: Parameters<typeof focusAgent>[1]) =>
-		agents.set(revealAgent(focusAgent(agents.get(), focus), {columns, rows: rows - planRowsFor(columns, rows), scrub}));
-	const planHeight = planWidgetRows(planState, {columns, rows, scrub, now: 0}).length;
-	const panelHeight = planHeight + layoutPanel(agentsState, {columns, rows: rows - planHeight, scrub}).height;
-	const viewRows = rows - panelHeight;
+	const lookFor = (cols: number, height: number) => ({columns: cols, rows: height, scrub});
+	const headerOf = (cols: number, height: number) => headerLayout(planStore.get(), agents.get(), lookFor(cols, height));
+	const panelOf = (cols: number, height: number) => headerOf(cols, height).panel;
+	const focusBox = (focus: Parameters<typeof focusAgent>[1]) => {
+		const next = focusAgent(agents.get(), focus);
+		const {panelMax} = headerLayout(planStore.get(), next, lookFor(columns, rows));
+		agents.set(revealAgent(next, {...lookFor(columns, rows), maxRows: panelMax}));
+	};
+	const header = headerLayout(planState, agentsState, lookFor(columns, rows));
 	const [, setTick] = useState(0);
 	const render = useCallback(() => setTick(n => n + 1), []);
 	const lastWidthRef = useRef(0);
@@ -609,7 +617,7 @@ export function ChatView(props: ChatViewProps) {
 	};
 
 	const promptKey = (p: PromptEntry, input: string, key: Key) => {
-		const res = promptEntryKey(p, input, key, {rows: viewRows, columns, reveal, armMs, now: Date.now()});
+		const res = promptEntryKey(p, input, key, {budget: promptBudget(rows, header.height), columns, reveal, armMs, now: Date.now()});
 		if (res.decision) answer(p, res.decision, res.stopTurn);
 		setT(setNotice(tRef.current, res.notice));
 	};
@@ -707,7 +715,7 @@ export function ChatView(props: ChatViewProps) {
 		else render();
 	};
 
-	const viewerRows = () => Math.max(3, (rows >= 12 ? rows - 3 : rows - 1) - panelHeight - 2);
+	const viewerRows = () => viewerHeight(rows, header.height);
 
 	const openViewer = () => {
 		viewerRef.current = {lines: ['Loading the transcript…'], top: -1};
@@ -818,8 +826,9 @@ export function ChatView(props: ChatViewProps) {
 
 	const onHeaderMouse = (raw: ViewMouseEvent): boolean => {
 		const shown = shownRef.current;
-		const layout = panelOf(shown.columns, shown.rows);
-		const planRows = planRowsFor(shown.columns, shown.rows);
+		const current = headerOf(shown.columns, shown.rows);
+		const layout = current.panel;
+		const planRows = current.planHeight;
 		if (raw.kind === 'wheel') {
 			const scroll = Math.min(layout.maxScroll, Math.max(0, layout.scroll + (raw.wheel === 'up' ? -1 : 1)));
 			agents.set({...agents.get(), scroll});
@@ -850,7 +859,7 @@ export function ChatView(props: ChatViewProps) {
 		if (raw.region === 'header') return onHeaderMouse(raw);
 		const shown = shownRef.current;
 		if (raw.kind === 'wheel') {
-			const height = Math.max(3, (shown.rows >= 12 ? shown.rows - 3 : shown.rows - 1) - shown.panelHeight - 2);
+			const height = viewerHeight(shown.rows, shown.panelHeight);
 			if (agents.get().open !== undefined && controller.pendingPermissions.length === 0) {
 				scrollAgent(shown.columns, height, top => top + (raw.wheel === 'up' ? -1 : 1));
 				return true;
@@ -1051,7 +1060,7 @@ export function ChatView(props: ChatViewProps) {
 	useEffect(() => {
 		const p = promptRef.current;
 		if (!p) return;
-		rearmEntry(p, layoutPrompt(viewRows, columns).tier, Date.now(), armMs);
+		rearmEntry(p, layoutPrompt(promptBudget(rows, header.height), columns).tier, Date.now(), armMs);
 	});
 
 	const prompt = currentPrompt();
@@ -1082,17 +1091,18 @@ export function ChatView(props: ChatViewProps) {
 			{...(pin !== undefined && {pin})}
 			{...(limit !== undefined && {limit})}
 			tasks={controller.tasks ?? []}
+			panelShown={header.panel.height > 0}
 			{...(props.projectDir !== undefined && {project: basename(props.projectDir)})}
 			{...(branchRef.current !== undefined && {branch: branchRef.current})}
 			scrub={scrub}
 		/>
 	);
-	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, panelHeight};
+	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, panelHeight: header.height};
 	const headerSlot = headerHost(host) !== undefined;
 	const fallbackPanel = headerSlot ? null : <ChatHeader plan={planStore} agents={agents} {...(host !== undefined && {host})} scrub={scrub} rows={rows} />;
 
 	if (prompt) {
-		const layout = layoutPrompt(viewRows, columns);
+		const layout = layoutPrompt(promptBudget(rows, header.height), columns);
 		const total = batchRef.current + controller.pendingPermissions.length;
 		const position = batchRef.current + 1;
 		return (
@@ -1183,33 +1193,36 @@ export function ChatView(props: ChatViewProps) {
 				: t.notice;
 	const hint = modeHint(t.mode);
 	const rule = '─'.repeat(Math.max(1, columns - 1));
-	const cap = (rows >= 12 ? rows - 3 : rows - 1) - panelHeight;
-	let rem = Math.max(0, cap - 2);
-	const ruleRows = rem >= 6 ? 2 : 0;
-	rem -= ruleRows;
-	const hintRows = hint && rem >= 4 ? 1 : 0;
-	rem -= hintRows;
-	const inputRows = Math.min(LIVE.maxInputRows, inputRowsNeeded(ed.text, columns), Math.max(1, Math.floor(rem / 2)));
-	rem -= inputRows;
 	const noticeNeeded = noticeText ? Math.ceil(noticeText.length / Math.max(1, columns)) : 0;
-	const noticeRows = Math.min(noticeNeeded, 2, Math.max(0, rem));
-	rem -= noticeRows;
 	const mention = activeMention();
-	const mentionRows = mention ? Math.min(mention.matches.length, Math.max(0, rem - 2)) : 0;
-	rem -= mentionRows;
 	const command = mention ? undefined : activeCommand();
-	const commandRows = command ? Math.min(command.matches.length, Math.max(0, rem - 2)) : 0;
-	rem -= commandRows;
+	const vimNormal = props.inputMode?.() === 'vim' && vimRef.current.mode === 'normal';
+	const toolCount = tools.length + (t.fold.length > 0 ? 1 : 0);
+	const wantedTail = liveTail(t.liveRaw, scrub, LIVE.maxTailRows, columns).length;
+	const live = liveLayout({
+		rows,
+		headerHeight: header.height,
+		inputNeeded: Math.min(LIVE.maxInputRows, inputRowsNeeded(ed.text, columns)),
+		notice: Math.min(noticeNeeded, 2),
+		menu: mention ? mention.matches.length : command ? command.matches.length : 0,
+		vim: vimNormal,
+		queued: Math.min(3, queueRef.current.length),
+		tools: toolLayout(toolCount, LIVE.maxTools + 1).rows,
+		tail: wantedTail,
+		hint: hint !== '',
+	});
+	const inputRows = live.input;
+	const noticeRows = live.notice;
+	const mentionRows = mention ? live.menu : 0;
+	const commandRows = command ? live.menu : 0;
+	const ruleRows = live.rules;
+	const hintRows = live.hint;
 	const commandLabel = (name: string) => `/${[...(command?.path ?? []), name].join(' ')}`;
 	const nameWidth = command ? Math.max(...command.matches.map(c => commandLabel(c.name).length)) + 1 : 0;
-	const vimNormal = props.inputMode?.() === 'vim' && vimRef.current.mode === 'normal';
-	rem -= vimNormal ? 1 : 0;
-	const queued = queuedLines(queueRef.current, scrub, Math.min(3, Math.max(0, rem - 1)));
-	rem -= queued.length;
-	const toolRows = toolLayout(tools.length + (t.fold.length > 0 ? 1 : 0), t.liveRaw ? Math.floor(rem / 2) : rem).rows;
-	rem -= toolRows;
-	const tail = liveTail(t.liveRaw, scrub, Math.min(LIVE.maxTailRows, Math.max(0, rem)), columns);
-	shownRef.current = {...shownRef.current, inputRows, vimNormal, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows};
+	const queued = queuedLines(queueRef.current, scrub, live.queued);
+	const toolRows = toolLayout(toolCount, live.tools).rows;
+	const tail = liveTail(t.liveRaw, scrub, live.tail, columns);
+	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows};
 
 	return (
 		<Box flexDirection="column">
@@ -1219,7 +1232,7 @@ export function ChatView(props: ChatViewProps) {
 					{line === '' ? ' ' : line}
 				</Text>
 			))}
-			<LiveTools tools={tools} fold={t.fold} scrub={scrub} maxRows={toolRows} width={Math.max(1, columns - 1)} />
+			{toolRows > 0 && <LiveTools tools={tools} fold={t.fold} scrub={scrub} maxRows={toolRows} width={Math.max(1, columns - 1)} />}
 			{queued.map((line, i) => (
 				<Text key={`queued-${i}`} dimColor wrap="truncate">
 					{line}
@@ -1256,7 +1269,7 @@ export function ChatView(props: ChatViewProps) {
 				<InputLine text={ed.text} cursor={ed.cursor} columns={columns} maxRows={inputRows} />
 			)}
 			{ruleRows > 0 && <Text dimColor>{rule}</Text>}
-			{vimNormal && <Text dimColor>-- NORMAL --</Text>}
+			{live.vim > 0 && <Text dimColor>-- NORMAL --</Text>}
 			{hintRows > 0 && (
 				<Text wrap="truncate" color={MODE_COLOR[t.mode]}>
 					{`  ${hint}`}

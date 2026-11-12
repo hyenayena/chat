@@ -66,7 +66,7 @@ export function PermissionPrompt(props: PermissionPromptProps) {
 	if (layout.tier === 'minimal') {
 		return (
 			<Text color="yellow" bold wrap="truncate">
-				Permission needed – enlarge the terminal to review (n to deny)
+				{truncateCells('Permission needed – enlarge the terminal to review (n to deny)', layout.rowWidth)}
 			</Text>
 		);
 	}
@@ -114,17 +114,17 @@ export function PermissionPrompt(props: PermissionPromptProps) {
 		return (
 			<Box flexDirection="column">
 				<Text color="yellow" bold wrap="truncate">
-					{`${prefix}${title}`}
+					{truncateCells(`${prefix}${title}`, layout.rowWidth)}
 				</Text>
 				{roomForRow && (
 					<Text dimColor={resolves === undefined} color={resolves === undefined ? undefined : 'yellow'} wrap="truncate">
-						{resolves === undefined ? '│ (press v to view)' : `│ ${resolves}`}
+						{truncateCells(resolves === undefined ? '│ (press v to view)' : `│ ${resolves}`, layout.rowWidth)}
 					</Text>
 				)}
 				{state.view === 'reason' ? (
 					<LabeledInput label={REASON} labelColor="yellow" text={state.reason} columns={layout.width} maxRows={1} />
 				) : (
-					<Text wrap="truncate">{footerText}</Text>
+					<Text wrap="truncate">{truncateCells(footerText, layout.rowWidth)}</Text>
 				)}
 			</Box>
 		);

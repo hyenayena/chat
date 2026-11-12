@@ -183,3 +183,18 @@ test('hostile text in the command, output, path and tool name never reaches the 
 		}
 	}
 });
+
+test('no card has a blank row inside, whatever blank lines the output holds', () => {
+	const text = 'a\n\n\nb\n  \nc\n';
+	const cards: ToolLike[] = [
+		{name: 'Bash', input: {command: 'ls'}, text, isError: false},
+		{name: 'Bash', input: {command: 'false'}, text: `Exit code 1\n${text}`, isError: true},
+		{name: 'Grep', input: {pattern: 'x'}, text, isError: false},
+		{name: 'WebFetch', input: {url: 'https://example.com'}, text, isError: false},
+	];
+	for (const card of cards) {
+		const rows = plain(card).split('\n');
+		assert.ok(card.name !== 'Bash' || rows.length > 1, JSON.stringify(rows));
+		assert.ok(rows.every(r => r.trim() !== ''), `${card.name}: ${JSON.stringify(rows)}`);
+	}
+});

@@ -3,7 +3,7 @@ import {test} from 'node:test';
 import type {ChatEvent, UiEvent} from '../../src/public.js';
 import {makeScrub} from '../../src/contract/scrub.js';
 import {stringCells, type SpanRow} from '../../src/kit.js';
-import {layoutPanel, PANEL} from '../../src/ui/agent-panel.js';
+import {layoutPanel} from '../../src/ui/agent-panel.js';
 import {AGENTS_CAPS, initialAgents, reduceAgents, type AgentsState} from '../../src/ui/agents.js';
 
 const scrub = makeScrub(s => s);
@@ -24,8 +24,8 @@ test('hostile names, models and one-liners never leak control characters or over
 	s = reduceAgents(s, ui({kind: 'tool-result', toolUseId: 'q', isError: true, text: evil}));
 	for (let columns = 2; columns <= 140; columns++) {
 		for (const rows of [0, 1, 11, 12, 13, 24, 50]) {
-			const p = layoutPanel(s, {columns, rows, scrub});
-			assert.ok(p.height <= Math.floor(rows * PANEL.share));
+			const p = layoutPanel(s, {columns, rows, maxRows: Math.floor(rows * 0.4), scrub});
+			assert.ok(p.height <= Math.floor(rows * 0.4));
 			for (const row of p.rows) {
 				const t = text(row);
 				assert.ok(!CONTROL.test(t), `${columns}/${rows}: ${JSON.stringify(t)}`);

@@ -234,7 +234,12 @@ export function renderMarkdownRows(text: string, options: MarkdownOptions = {}):
 	while (last > first && blocks[last - 1]!.kind === 'blank') last--;
 	const rows: string[] = [];
 	const codeBlocks: CodeBlock[] = [];
+	let gap = false;
 	for (const b of blocks.slice(first, last)) {
+		if (b.kind === 'blank') {
+			if (gap) continue;
+			gap = true;
+		} else gap = false;
 		const r = blockRows(b, c);
 		if (r.code !== undefined) codeBlocks.push({row: rows.length + r.code.row, code: r.code.code});
 		for (const row of r.rows) rows.push(row);

@@ -246,6 +246,8 @@ export function formatPlanNotes(notes: readonly PlanNote[], scrub: Scrub): strin
 					return mark(tick, sg.ok, `Plan done · ${n.done}/${n.total}`);
 			}
 		})
+		.flatMap(row => row.split('\n'))
+		.filter(row => row.trim() !== '')
 		.join('\n');
 }
 

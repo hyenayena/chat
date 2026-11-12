@@ -10,6 +10,7 @@ import {
 	initToolPrompt,
 	layoutPrompt,
 	normalizeKey,
+	PROMPT_ROWS,
 	questionPromptKey,
 	toolBodyRows,
 	toolPromptKey,
@@ -19,6 +20,7 @@ import {
 } from '../../src/ui/prompt-state.js';
 import {styledCells, stripStyles} from '../../src/kit.js';
 import {questionReq, toolReq} from './testkit.js';
+import {promptBudget} from '../../src/ui/chat-layout.js';
 
 const ch = (c: string): PromptKey => ({name: 'char', char: c});
 const k = (name: PromptKey['name']): PromptKey => ({name});
@@ -279,21 +281,35 @@ test('question prompt: Other in a multi-select joins after the picked labels', (
 	assert.equal(done.state.answers['Pick'], 'Red, Pink');
 });
 
-test('layoutPrompt budget follows the live-region cap', () => {
-	const big = layoutPrompt(24, 80);
+test('layoutPrompt takes its budget directly and picks the tier from it', () => {
+	const big = layoutPrompt(21, 80);
 	assert.equal(big.budget, 21);
+	assert.equal(big.tier, 'full');
 	assert.equal(big.compactChoices, false);
 	assert.equal(big.bodyRows, 11);
 	assert.equal(big.width, 76);
-	const small = layoutPrompt(10, 80);
+	const small = layoutPrompt(8, 80);
 	assert.equal(small.budget, 8);
+	assert.equal(small.tier, 'tiny');
 	assert.equal(small.compactChoices, true);
 	assert.equal(small.showHint, false);
 	assert.equal(small.bodyRows, 3);
 	assert.equal(small.bodyHidden, false);
-	assert.equal(layoutPrompt(8, 80).bodyHidden, true);
+	assert.equal(layoutPrompt(PROMPT_ROWS.body - 1, 80).bodyHidden, true);
 	assert.ok(layoutPrompt(2, 5).bodyRows >= 1);
-	assert.equal(layoutPrompt(30, 40).pagerRows, 25);
+	assert.equal(layoutPrompt(30, 40).pagerRows, 28);
+});
+
+test('layoutPrompt thresholds are the named PROMPT_ROWS constants', () => {
+	assert.equal(layoutPrompt(PROMPT_ROWS.minimal - 1, 80).tier, 'minimal');
+	assert.equal(layoutPrompt(PROMPT_ROWS.minimal, 80).tier, 'tiny');
+	assert.equal(layoutPrompt(PROMPT_ROWS.tiny - 1, 80).tier, 'tiny');
+	assert.equal(layoutPrompt(PROMPT_ROWS.tiny, 80).tier, 'full');
+	assert.equal(layoutPrompt(PROMPT_ROWS.compact - 1, 80).compactChoices, true);
+	assert.equal(layoutPrompt(PROMPT_ROWS.compact, 80).compactChoices, false);
+	assert.equal(layoutPrompt(PROMPT_ROWS.body, 80).bodyHidden, false);
+	assert.equal(layoutPrompt(0, 80).budget, 2, 'never below the floor');
+	assert.equal(layoutPrompt(PROMPT_ROWS.tiny, 80).budget, PROMPT_ROWS.tiny);
 });
 
 test('toolBodyRows reveals, wraps and labels content; clipBody marks cuts', () => {
@@ -382,4 +398,16 @@ test('an Edit preview is drawn as styled card rows within the width, with the bu
 	const long = {...preview, rows: [...preview.rows, ...Array.from({length: 3000}, (_, i) => ({kind: 'add' as const, text: 'x'.repeat(100), newNo: 10 + i}))]};
 	const cut = toolBodyRows(toolReq({toolName: 'Edit', path: '/app/a.ts', input: {file_path: '/app/a.ts'}, always: false, preview: long}), s => s, 60);
 	assert.ok(cut.some(r => r.text === '… [preview truncated]'));
+});
+
+test('with no header the tiers switch at the terminal rows they always did', () => {
+	const at = (rows: number) => layoutPrompt(promptBudget(rows, 0), 80);
+	assert.equal(at(3).tier, 'minimal');
+	assert.equal(at(4).tier, 'tiny');
+	assert.equal(at(9).tier, 'tiny');
+	assert.equal(at(10).tier, 'full');
+	for (const rows of [12, 13, 14]) assert.equal(at(rows).tier, 'full', `rows ${rows}`);
+	assert.equal(at(16).compactChoices, true);
+	assert.equal(at(17).compactChoices, false);
+	assert.equal(at(24).budget, 21);
 });

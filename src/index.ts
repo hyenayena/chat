@@ -4,7 +4,7 @@ import * as kit from './kit.js';
 import {noopLog} from './log.js';
 import {setActivityEvents} from './activity.js';
 import {setModuleSessionLog} from './module-sessions.js';
-import {chatGallerySection, diffGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from './ui/gallery.js';
+import {chatGallerySection, diffGallerySection, layoutGallerySection, planGallerySection, statusGallerySection, toolsGallerySection} from './ui/gallery.js';
 import {markdownGallerySection} from './ui/markdown-gallery.js';
 
 // The gallery is optional: an older core has no registry, and a failure here must not stop the plugin.
@@ -14,7 +14,7 @@ function registerGallery(log: Logger): void {
 			log.warn('gallery section skipped');
 			return;
 		}
-		for (const section of [chatGallerySection, diffGallerySection, toolsGallerySection, statusGallerySection, planGallerySection, markdownGallerySection]) {
+		for (const section of [chatGallerySection, diffGallerySection, toolsGallerySection, statusGallerySection, planGallerySection, layoutGallerySection, markdownGallerySection]) {
 			if (!kit.registerGallerySection(section)) log.warn('gallery section skipped', {section: section.name});
 		}
 	} catch (err) {
