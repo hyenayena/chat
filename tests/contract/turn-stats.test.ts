@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import type {ToolPatch} from '../../src/public.js';
-import {fileChange, MAX_TURN_FILES, MAX_TURN_TOOL_IDS, TurnStats} from '../../src/public.js';
+import {fileChange, MAX_DURATION_MS, MAX_TURN_FILES, MAX_TURN_TOOL_IDS, TurnStats} from '../../src/public.js';
 import {fileCardOf} from '../../src/ui/file-card.js';
 
 const hunk = (lines: string[]): ToolPatch => ({hunks: [{oldStart: 1, newStart: 1, lines}]});
@@ -68,7 +68,7 @@ test('the caps: tool ids, listed files and numbers', () => {
 	assert.equal(sum.files.length, MAX_TURN_FILES);
 	assert.equal(sum.filesTotal, MAX_TURN_FILES + 5);
 	assert.equal(sum.added, MAX_TURN_FILES + 5);
-	assert.ok(sum.durationMs <= 604_800_000 && sum.outputTokens <= 1_000_000_000);
+	assert.ok(sum.durationMs <= MAX_DURATION_MS && sum.outputTokens <= 1_000_000_000);
 	assert.equal(fileChange('Write', {file_path: 'x'.repeat(5000), content: ''})!.path.length, 1024);
 });
 

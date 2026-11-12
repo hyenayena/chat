@@ -196,8 +196,8 @@ test('thinking-text duration is read, older events stay valid, bad values are re
 	same({type: 'ui', event: {kind: 'thinking-text', text: 'hmm', durationMs: 12_000}});
 	same({type: 'ui', event: {kind: 'thinking-text', text: 'hmm'}});
 	const event = (durationMs: unknown) => ui({kind: 'thinking-text', text: 'hmm', durationMs});
-	for (const ms of ['1', -1, 86_400_001, {}, [1]]) bad(event(ms), String(ms));
-	assert.ok(readChatEvent(event(86_400_000)));
+	for (const ms of ['1', -1, 604_800_001, {}, [1]]) bad(event(ms), String(ms));
+	assert.ok(readChatEvent(event(604_800_000)));
 });
 
 const summary = {durationMs: 61_000, tools: 3, files: [{path: '/p/a.ts', added: 4, removed: 1, created: true as const}], filesTotal: 1, added: 4, removed: 1, outputTokens: 900};

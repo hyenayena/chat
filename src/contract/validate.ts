@@ -4,7 +4,7 @@ import type {AuditEntry, CancelCause, PermissionDecision, PermissionRequest, Pre
 import {MAX_PLAN_ID, MAX_PLAN_ITEMS, MAX_PLAN_TEXT, PLAN_STATUSES, type PlanItem} from './plan.js';
 import type {LimitType, RateLimitInfo} from './limits.js';
 import {TIERS, type Tier} from './tiers.js';
-import {MAX_TURN_FILES, MAX_TURN_PATH, type TurnFileChange, type TurnSummary} from './turn-stats.js';
+import {MAX_DURATION_MS, MAX_TURN_FILES, MAX_TURN_PATH, type TurnFileChange, type TurnSummary} from './turn-stats.js';
 import type {ProviderCommand, TaskInfo} from './provider.js';
 
 export const MAX_EVENT_TEXT = 1024 * 1024;
@@ -40,8 +40,6 @@ const arr = (v: unknown, what: string, max: number): unknown[] =>
 	Array.isArray(v) && v.length <= max ? v : fail(`${what} must be a list of at most ${max}`);
 const has = (o: Rec, key: string): boolean => o[key] !== undefined && o[key] !== null;
 
-const MAX_TOOL_DURATION_MS = 604_800_000;
-const MAX_THINKING_MS = 86_400_000;
 const MODES = ['default', 'acceptEdits', 'plan', 'auto'] as const;
 const STATES = ['idle', 'running', 'closed'] as const;
 const OUTCOMES = ['ok', 'error', 'interrupted', 'timeout', 'max-turns', 'limit', 'context'] as const;
@@ -247,7 +245,7 @@ export const readUiEvent = (v: unknown): UiEvent | undefined => {
 			return {
 				kind: 'thinking-text',
 				text: str(o.text, 'text'),
-				...(has(o, 'durationMs') && {durationMs: nonNeg(o.durationMs, 'durationMs', MAX_THINKING_MS)}),
+				...(has(o, 'durationMs') && {durationMs: nonNeg(o.durationMs, 'durationMs', MAX_DURATION_MS)}),
 			};
 		case 'task':
 			return {
@@ -279,7 +277,7 @@ export const readUiEvent = (v: unknown): UiEvent | undefined => {
 				isError: bool(o.isError, 'isError'),
 				text: str(o.text, 'text'),
 				...(has(o, 'patch') && {patch: readToolPatch(o.patch)}),
-				...(has(o, 'durationMs') && {durationMs: nonNeg(o.durationMs, 'durationMs', MAX_TOOL_DURATION_MS)}),
+				...(has(o, 'durationMs') && {durationMs: nonNeg(o.durationMs, 'durationMs', MAX_DURATION_MS)}),
 			};
 		case 'tool-progress':
 			return {
@@ -347,7 +345,6 @@ export const readUiEvent = (v: unknown): UiEvent | undefined => {
 };
 
 const MAX_CONTEXT_TOKENS = 100_000_000;
-const MAX_SUMMARY_MS = 604_800_000;
 const MAX_SUMMARY_COUNT = 1_000_000_000;
 
 export const readContextInfo = (o: Rec): ContextInfo => ({
@@ -379,7 +376,7 @@ export const readTurnSummary = (v: unknown): TurnSummary => {
 		};
 	});
 	return {
-		durationMs: nonNeg(o.durationMs, 'durationMs', MAX_SUMMARY_MS),
+		durationMs: nonNeg(o.durationMs, 'durationMs', MAX_DURATION_MS),
 		tools: nonNeg(o.tools, 'tools', MAX_SUMMARY_COUNT),
 		files,
 		filesTotal: nonNeg(o.filesTotal, 'filesTotal', MAX_SUMMARY_COUNT),

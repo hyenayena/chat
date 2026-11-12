@@ -19,7 +19,7 @@ export const MAX_TURN_PATH = 1024;
 // Control characters grow sixfold when the frame is JSON-escaped; without them 200 paths always fit one runner frame.
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f]', 'g');
 // The runner protocol rejects larger numbers.
-const MAX_TURN_MS = 604_800_000;
+export const MAX_DURATION_MS = 604_800_000;
 const MAX_TURN_COUNT = 1_000_000_000;
 const MAX_EDITS = 50;
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -125,7 +125,7 @@ export class TurnStats {
 
 	finish(durationMs: number, outputTokens: number): TurnSummary {
 		return {
-			durationMs: Math.min(MAX_TURN_MS, Math.max(0, Math.round(durationMs))),
+			durationMs: Math.min(MAX_DURATION_MS, Math.max(0, Math.round(durationMs))),
 			tools: this.tools,
 			files: this.shown.map(f => ({...f})),
 			filesTotal: this.byPath.size,
