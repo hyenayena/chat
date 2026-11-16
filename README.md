@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.6): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.7): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -23,6 +23,8 @@ The providers are registered by other modules (`registerChatProvider`); the defa
 **Prefs** (`<dataDir>/prefs.json`, `{v: 1, permissionMode?, inputMode?, keepRunning?, provider?}`, written atomically): an invalid file is ignored. When the file is missing and a provider is registered, the first non-empty `legacyPrefs()` is written once and then `clearLegacyPrefs()` runs on each provider; a failed write clears nothing and logs `prefs hand-over failed`. The `Chat` settings tab has Permission mode (the options follow the default provider's modes), Input mode, Keep working after exit and Default provider.
 
 **Exports** go to `<dataDir>/exports/<YYYY-MM-DD-HH-MM>-<session8>.md`, or to a file inside the provider's project directory; the path must stay inside one of the two and an existing file is never overwritten.
+
+Export (`yena.json` `export.deny`): none, `prefs.json` and the `exports/` folder are exported.
 
 ## The contract (`src/contract/`)
 
