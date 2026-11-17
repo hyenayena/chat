@@ -18,6 +18,7 @@ test('the UI entry exposes exactly the stable names', async () => {
 		'formatBanner',
 		'formatFileCard',
 		'formatNotice',
+		'formatProfileLine',
 		'formatUserLine',
 		'listProjectFiles',
 	]);

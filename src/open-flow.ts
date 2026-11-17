@@ -1,10 +1,12 @@
 import {watchChatActivity} from './activity.js';
 import type {BuildInfo, CommandContext, Logger, MountControl, PrintOptions, UiElement, ViewHost} from '../../../src/api.js';
+import {nounOf} from './contract/profile.js';
 import type {ChatProvider, OpenedChat, OpenEnv, OpenRequest} from './contract/provider.js';
 import type {ShellFeed} from './contract/shell.js';
 import {clockTime} from './clock-time.js';
 import {readGitBranch} from './git-head.js';
-import {noopLog} from './log.js';
+import {errClass, noopLog} from './log.js';
+import type {ProfileStore} from './profile-bindings.js';
 import {createShellPanel} from './shell-panel.js';
 import {editInEditor} from './terminal.js';
 import type {ChatUiHelpers, ChatViewProps, ListPickerProps, WaitingViewProps} from './public-ui.js';
@@ -32,6 +34,7 @@ export type FlowDeps = {
 	registerAbort?: (c: AbortController) => () => void;
 	loadUi?: () => Promise<ChatUi>;
 	waitPollMs?: number;
+	profiles?: ProfileStore;
 };
 
 export const isMissingModule = (err: unknown): boolean => {
@@ -101,7 +104,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	if (!opened) return;
 
 	const {session, scrub, reveal, projectDir, resume} = opened;
-	const {formatBanner, formatFileCard, assistantPrint, assistantRows, formatNotice, formatUserLine, listProjectFiles} = ui;
+	const {formatBanner, formatFileCard, assistantPrint, assistantRows, formatNotice, formatProfileLine, formatUserLine, listProjectFiles} = ui;
 	const startedAt = Date.now();
 
 	let projectFiles: readonly string[] = [];
@@ -124,6 +127,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	let unregister: (() => void) | undefined;
 	let unwatchClosed: (() => void) | undefined;
 	let unwatchActivity: (() => void) | undefined;
+	let unwatchRecord: (() => void) | undefined;
 	try {
 		const shell = opened.shell;
 		shellPanel = shell
@@ -142,7 +146,25 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		lifetime.signal.addEventListener('abort', () => session.close());
 
 		deps.onOpened?.(opened);
-		unwatchActivity = watchChatActivity(session, {id: 'user', label: 'chat'});
+		const store = req.profile ? deps.profiles : undefined;
+		const wide = store && resume ? await provider.history(resume, {limit: Number.MAX_SAFE_INTEGER}).catch(() => []) : undefined;
+		let sentCount = wide?.filter(m => m.role === 'user').length ?? 0;
+		let boundId: string | undefined;
+		const failed = (err: unknown): void => log.warn('profile record failed', {errClass: errClass(err)});
+		if (store && req.profile) {
+			const profile = req.profile;
+			unwatchRecord = session.subscribe(e => {
+				if (e.type === 'ui' && e.event.kind === 'session' && boundId !== e.event.sessionId) {
+					boundId = e.event.sessionId;
+					store.bind(boundId, {id: profile.id, owner: profile.owner, ...(profile.noun !== undefined && {noun: profile.noun}), args: profile.args ?? []}).catch(failed);
+				} else if (e.type === 'sent') {
+					sentCount++;
+					const id = session.sessionId;
+					if (id) store.touch(id).catch(failed);
+				}
+			});
+		}
+		unwatchActivity = watchChatActivity(session, {id: 'user', label: nounOf(req.profile)});
 		let printHistory: ((text: string, options?: PrintOptions) => void) | undefined;
 		const mounted = mount(control => {
 			printHistory = control.print ?? ctx.print;
@@ -162,6 +184,13 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 				readBranch: () => readGitBranch(projectDir),
 				projectDir,
 				...(opened.pin && {pin: opened.pin}),
+				...(req.profile && {profile: req.profile}),
+				...(store && {
+					onProfileLine: (line: {agent: string; text: string}) => {
+						const id = session.sessionId ?? boundId;
+						if (id) store.addLine(id, {n: sentCount, agent: line.agent, text: line.text}).catch(failed);
+					},
+				}),
 				...(opened.model !== undefined && {initialModel: opened.model}),
 				...(opened.account !== undefined && {initialAccount: opened.account}),
 				...(resume && !req.fork && {initialSessionId: resume}),
@@ -187,11 +216,27 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		});
 		if (resume && printHistory) {
 			const print = printHistory;
-			const earlier = await provider.history(resume, {limit: HISTORY_MESSAGES, ...(req.historyUntil && {until: req.historyUntil})}).catch(() => []);
+			const profile = req.profile;
+			const all = wide ?? (await provider.history(resume, {limit: HISTORY_MESSAGES, ...(req.historyUntil && {until: req.historyUntil})}).catch(() => []));
+			const earlier = all.slice(-HISTORY_MESSAGES);
+			const saved = store ? await store.lines(resume).catch(() => []) : [];
+			let users = all.slice(0, all.length - earlier.length).filter(m => m.role === 'user').length;
+			const printLines = (): void => {
+				for (const l of saved) {
+					if (l.n !== users) continue;
+					const agent = profile && Object.hasOwn(profile.agents, l.agent) ? profile.agents[l.agent] : undefined;
+					const view = {label: agent?.label ?? l.agent, tone: agent?.tone ?? ('teal' as const), text: l.text};
+					const columns = chatHost?.columns() ?? 0;
+					print(formatProfileLine(view, scrub, columns > 1 ? columns - 1 : undefined), {render: w => formatProfileLine(view, scrub, w)});
+				}
+			};
+			printLines();
 			for (const m of earlier) {
 				print(' ');
 				if (m.role === 'user') {
 					print(formatUserLine(m.text, scrub));
+					users++;
+					printLines();
 					continue;
 				}
 				const columns = chatHost?.columns() ?? 0;
@@ -204,6 +249,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 			const banner = (columns: number): string => formatBanner({build: deps.build, model: opened.model, columns}, scrub);
 			printHistory(banner(chatHost?.columns() || 80), {render: banner});
 		}
+		if (req.profile?.banner && printHistory) printHistory(formatNotice(req.profile.banner, scrub));
 		if (opened.reattached && printHistory) {
 			printHistory(formatNotice(`Reattached to a session working since ${clockTime(opened.reattached.startedAt)}`, scrub));
 		}
@@ -214,6 +260,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		shellPanel?.dispose();
 		unwatchClosed?.();
 		unwatchActivity?.();
+		unwatchRecord?.();
 		try {
 			opened.close();
 		} finally {
@@ -222,11 +269,12 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		}
 		log.info('chat closed', {ms: Date.now() - startedAt, session8: sessionId?.slice(0, 8), model});
 		const left = opened.detachedWhileRunning();
+		const noun = nounOf(req.profile);
 		ctx.print(
 			scrub(
 				sessionId
-					? `[chat ${left ? 'left running in the background' : 'closed'} · session ${sessionId.slice(0, 8)} · model ${model ?? 'unknown'}]`
-					: '[chat closed]',
+					? `[${noun} ${left ? 'left running in the background' : 'closed'} · session ${sessionId.slice(0, 8)} · model ${model ?? 'unknown'}]`
+					: `[${noun} closed]`,
 			),
 		);
 	}

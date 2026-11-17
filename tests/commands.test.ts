@@ -5,7 +5,7 @@ import path from 'node:path';
 import {test} from 'node:test';
 import {checkCommandDocs} from '../src/kit.js';
 import {createChatCommands} from '../src/commands.js';
-import {currentChat, registerChatProvider} from '../src/public.js';
+import {currentChat, openProfileChat, profileSessions, registerChatProfile, registerChatProvider, type ChatProfile} from '../src/public.js';
 import {makeCtx} from './helpers/fake-ctx.js';
 import {makeProvider} from './helpers/fake-provider.js';
 import {cleanup, openChat, release, run, setup, tick} from './helpers/env.js';
@@ -525,4 +525,134 @@ test('a command of the open chat is sent to it; unknown ones, a busy chat and no
 	await assert.rejects(run(env.chat, ['compact'], ctx), /still answering/);
 	a.ctx.closeAll();
 	await a.done;
+});
+
+test('an open profile chat takes messages only from the user', async () => {
+	const env = setup();
+	const ctx = makeCtx();
+	const done = openProfile(ctx);
+	for (let i = 0; i < 100 && ctx.mounts === 0; i++) await tick();
+	await tick();
+	const refused = 'A module chat takes messages only from the user';
+	await assert.rejects(run(env.chat, ['send', 'hi'], makeCtx({signal: true, caller: 'yena'})), new Error(refused));
+	await assert.rejects(run(env.chat, ['send', 'hi'], makeCtx({signal: true})), new Error(refused));
+	await run(env.chat, ['send', 'hi'], makeCtx());
+	assert.deepEqual(env.fu.delivered, ['hi']);
+	ctx.closeAll();
+	await done;
+});
+
+const openProfile = (ctx: ReturnType<typeof makeCtx>) =>
+	openProfileChat(
+		{id: 'clan', owner: 'clan', appendSystemPrompt: 'Moderate.', mainTools: ['Agent'], agents: {skeptic: {description: 'd', prompt: 'p', label: 'Skeptic', tone: 'teal'}}},
+		ctx,
+	);
+
+test('start while a profile chat is answering names its noun', async () => {
+	const env = setup({session: {state: 'running'} as never});
+	const ctx = makeCtx();
+	const done = openProfileChat(
+		{id: 'clan', owner: 'clan', noun: 'clan', appendSystemPrompt: 'M.', mainTools: ['Agent'], agents: {a: {description: 'd', prompt: 'p', label: 'A', tone: 'teal'}}},
+		ctx,
+	);
+	for (let i = 0; i < 100 && ctx.mounts === 0; i++) await tick();
+	await tick();
+	await assert.rejects(run(env.chat, ['start', 'again'], makeCtx()), /A clan is answering/);
+	ctx.closeAll();
+	await done;
+});
+
+const bind = (dir: string, sessions: Record<string, {args?: string[]; noun?: string; last?: number}>) =>
+	writeFileSync(
+		path.join(dir, 'profiles.json'),
+		JSON.stringify({v: 1, sessions: Object.fromEntries(Object.entries(sessions).map(([k, v]) => [k, {id: 'clan', owner: 'clan', noun: v.noun ?? 'clan', args: v.args ?? ['skeptic'], at: 1, last: v.last ?? 2}]))}),
+	);
+
+const clanSource = (build?: (args: string[]) => Promise<ChatProfile>) =>
+	registerChatProfile({
+		id: 'clan',
+		owner: 'clan',
+		build:
+			build ??
+			(async args => ({id: 'clan', owner: 'clan', noun: 'clan', args, appendSystemPrompt: 'M.', mainTools: ['Agent'], agents: {skeptic: {description: 'd', prompt: 'p', label: 'Skeptic', tone: 'teal'}}})),
+	})!;
+
+test('the resume picker and the id prefix match do not show module sessions', async () => {
+	const env = setup({
+		sessionList: [
+			{sessionId: 'abc111', title: 'one', modified: Date.now(), prompts: 1},
+			{sessionId: 'abc222', title: 'clan one', modified: Date.now(), prompts: 2},
+		],
+	});
+	bind(env.dataDir, {abc222: {}});
+	env.fu.pick = p => p.close();
+	const ctx = makeCtx();
+	await run(env.chat, ['resume'], ctx);
+	assert.deepEqual(env.fu.pickers[0]?.items.map(i => i.id), ['abc111']);
+	release();
+	const again = setup({sessionList: [{sessionId: 'abc111', title: 'one', modified: Date.now(), prompts: 1}, {sessionId: 'abc222', title: 'two', modified: Date.now(), prompts: 2}]});
+	bind(again.dataDir, {abc222: {}});
+	const a = await openChat(again, ['resume', 'abc']);
+	assert.equal(again.fake.opens[0]?.resume, 'abc111');
+	a.ctx.closeAll();
+	await a.done;
+});
+
+test('an explicit full id of a module session reopens it with the rebuilt profile', async () => {
+	const env = setup();
+	bind(env.dataDir, {'clan-1': {args: ['skeptic', 'dreamer']}});
+	const seen: string[][] = [];
+	cleanup.push(clanSource(async args => (seen.push(args), { id: 'clan', owner: 'clan', noun: 'clan', args, appendSystemPrompt: 'M.', mainTools: ['Agent'], agents: {skeptic: {description: 'd', prompt: 'p', label: 'S', tone: 'teal'}}})));
+	const a = await openChat(env, ['resume', 'clan-1']);
+	const req = env.fake.opens[0]!;
+	assert.equal(req.resume, 'clan-1');
+	assert.equal(req.fresh, false);
+	assert.equal(req.attach, false);
+	assert.equal(req.keep, false);
+	assert.equal(req.profile?.id, 'clan');
+	assert.deepEqual(seen, [['skeptic', 'dreamer']]);
+	a.ctx.closeAll();
+	await a.done;
+});
+
+test('resuming a module session refuses a missing module, a build error, a stranger and a non-user origin', async () => {
+	const env = setup();
+	bind(env.dataDir, {'clan-1': {}});
+	await assert.rejects(run(env.chat, ['resume', 'clan-1'], makeCtx()), /belongs to module "clan", which is not installed/);
+	cleanup.push(clanSource(async () => Promise.reject(new Error('Persona "skeptic" of this session is missing'))));
+	await assert.rejects(run(env.chat, ['resume', 'clan-1'], makeCtx()), /Persona "skeptic" of this session is missing/);
+	await assert.rejects(run(env.chat, ['resume', 'clan-1'], makeCtx({signal: true})), /opens only from the user's console/);
+	assert.equal(env.fake.opens.length, 0);
+});
+
+test('profileSessions lists the bound sessions of a profile newest first, skipping those without a transcript', async () => {
+	const env = setup({titles: {a: 'First', b: 'Second'}});
+	bind(env.dataDir, {a: {last: 10, args: ['x']}, b: {last: 20}, gone: {last: 30}});
+	const list = await profileSessions('clan');
+	assert.deepEqual(list.map(s => [s.sessionId, s.title, s.lastAt, s.startedAt]), [['b', 'Second', 20, 1], ['a', 'First', 10, 1]]);
+	assert.deepEqual(list[1]!.args, ['x']);
+	assert.equal((await profileSessions('clan', 1)).length, 1);
+	assert.deepEqual(await profileSessions('other'), []);
+});
+
+test('fork and rewind are refused for a module session and continue is untouched', async () => {
+	const env = setup({lastSession: 'plain-1', prompts: [{uuid: 'u1', parentUuid: null, text: 'hi'}]});
+	cleanup.push(clanSource());
+	bind(env.dataDir, {'clan-1': {}});
+	const ctx = makeCtx();
+	const done = openProfileChat(
+		{id: 'clan', owner: 'clan', noun: 'clan', appendSystemPrompt: 'M.', mainTools: ['Agent'], agents: {skeptic: {description: 'd', prompt: 'p', label: 'S', tone: 'teal'}}},
+		ctx,
+	);
+	for (let i = 0; i < 100 && ctx.mounts === 0; i++) await tick();
+	(env.fake.sessions[0] as {sessionId?: string}).sessionId = 'clan-1';
+	await assert.rejects(run(env.chat, ['fork'], makeCtx()), /Fork and rewind are not available for a clan session/);
+	await assert.rejects(run(env.chat, ['rewind'], makeCtx()), /Fork and rewind are not available for a clan session/);
+	ctx.closeAll();
+	await done;
+	const next = await openChat(env, ['continue']);
+	assert.equal(env.fake.opens.at(-1)?.profile, undefined);
+	assert.equal(env.fake.opens.at(-1)?.resume, undefined);
+	next.ctx.closeAll();
+	await next.done;
 });

@@ -1,6 +1,6 @@
 import {BLOCK_DISPLAY_CAP, clampChars} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
-import {SGR_ATTR, formatElapsed, glyph, sliceCells, stringCells, truncateCells} from '../kit.js';
+import {SGR_ATTR, formatElapsed, glyph, paintTone, sliceCells, sliceStyledCells, stringCells, truncateCells} from '../kit.js';
 import {sgr} from './sgr.js';
 import type {PrintAction, PrintOptions} from '../../../../src/api.js';
 import type {RouteInfo} from '../public.js';
@@ -10,6 +10,7 @@ import {formatToolCard, formatToolGroup, resultLines} from './tool-card.js';
 import type {Scrub} from './tool-args.js';
 import {LIVE, ROUTE_TOOL_NAME, type Out, type Phase, type StatusLine} from './transcript.js';
 import type {Tier} from '../public.js';
+import {PROFILE_TONES, nounOf, type ChatProfile, type ProfileTone} from '../public.js';
 import {turnSummaryRow} from './turn-summary.js';
 
 export {CODE_BLOCK_ROWS};
@@ -85,6 +86,58 @@ function assistantBlock(text: string, scrub: Scrub, interrupted: boolean, width:
 	if (interrupted) lines.push(paint(sgr().muted, '(interrupted)'));
 	const actions = rendered.codeBlocks.map((b): PrintAction => ({line: b.row, copy: b.code}));
 	return {text: hang('●', lines), actions};
+}
+
+const PROFILE_LINE_ROWS = 40;
+
+export type ProfileLineView = {label: string; tone: ProfileTone; text: string};
+
+// width is the widest row allowed; the body hangs under the label by the bullet's width.
+export function formatProfileLine(line: ProfileLineView, scrub: Scrub, width?: number): string {
+	const tone = Object.hasOwn(PROFILE_TONES, line.tone) ? PROFILE_TONES[line.tone] : PROFILE_TONES.teal;
+	const max = width === undefined ? undefined : Math.max(4, Math.floor(width));
+	const label = scrub(line.label).replace(/\s+/gu, ' ').trim();
+	const head = `${glyph('bullet')} ${max === undefined ? label : truncateCells(label, max - 2)}`;
+	const body = renderMarkdownRows(scrub(clampChars(line.text, BLOCK_DISPLAY_CAP)), {width: Math.max(1, (max ?? 80) - BLOCK_INDENT)}).rows;
+	let rows = body;
+	if (body.length > PROFILE_LINE_ROWS) {
+		const more = body.length - (PROFILE_LINE_ROWS - 1);
+		rows = [...body.slice(0, PROFILE_LINE_ROWS - 1), paint(sgr().muted, `… +${more} line${more === 1 ? '' : 's'}`)];
+	}
+	const pad = ' '.repeat(BLOCK_INDENT);
+	return [paintTone(`${SGR_ATTR.bold}${head}`, tone), ...rows.map(r => (r === '' ? '' : `${pad}${r}`))].join('\n');
+}
+
+const TYPING_NAMES = 3;
+const TYPING_LABEL_CELLS = 20;
+
+export type TypingCell = {agent: string; x0: number; x1: number};
+export type TypingRow = {text: string; cells: TypingCell[]};
+
+// cells are the columns of each shown name, for the click that opens that agent's run.
+export function typingRow(pending: readonly string[], profile: Pick<ChatProfile, 'agents'>, columns: number, scrub: Scrub = s => s): TypingRow | undefined {
+	const limit = Math.floor(columns) - 1;
+	if (pending.length === 0 || !(limit >= 1)) return undefined;
+	const shown = pending.slice(0, TYPING_NAMES);
+	const more = pending.length - shown.length;
+	const cells: TypingCell[] = [];
+	let text = '  ';
+	let x = 2;
+	shown.forEach((agent, i) => {
+		const def = Object.hasOwn(profile.agents, agent) ? profile.agents[agent] : undefined;
+		const tone = def && Object.hasOwn(PROFILE_TONES, def.tone) ? PROFILE_TONES[def.tone] : PROFILE_TONES.teal;
+		const label = truncateCells(scrub(def?.label ?? agent).replace(/\s+/gu, ' ').trim(), TYPING_LABEL_CELLS);
+		const width = stringCells(label);
+		cells.push({agent, x0: x, x1: x + width});
+		text += paintTone(label, tone);
+		x += width;
+		if (i < shown.length - 1) {
+			text += ', ';
+			x += 2;
+		}
+	});
+	text += paint(sgr().muted, `${more > 0 ? ` +${more}` : ''} typing${glyph('ellipsis')}`);
+	return {text: sliceStyledCells(text, 0, limit), cells: cells.filter(c => c.x0 < limit).map(c => ({...c, x1: Math.min(c.x1, limit)}))};
 }
 
 // The rows of an assistant message without the leading marker, for the transcript viewer (code blocks in full).
@@ -178,7 +231,7 @@ const pluralQuestions = (summary: string): string => {
 	return m[1] === '1' ? '1 question' : `${m[1]} questions`;
 };
 
-export function formatAudit(entry: AuditEntry, scrub: Scrub, reveal: Scrub = scrub, width?: number): string {
+export function formatAudit(entry: AuditEntry, scrub: Scrub, reveal: Scrub = scrub, width?: number, noun = 'chat'): string {
 	const tool = scrub(entry.toolName);
 	const summary = auditText(entry.summary, reveal);
 	const line = ((): string => {
@@ -188,7 +241,7 @@ export function formatAudit(entry: AuditEntry, scrub: Scrub, reveal: Scrub = scr
 			case 'auto-accepted':
 				return `Auto-accepted ${tool}: ${summary}`;
 			case 'always-allowed':
-				return `Always-allowed ${tool}(${summary}) for this chat`;
+				return `Always-allowed ${tool}(${summary}) for this ${noun}`;
 			case 'denied':
 				return `Denied ${tool}: ${summary}`;
 			case 'denied-by-policy':
@@ -213,15 +266,16 @@ function cutMiddle(text: string, max: number): string {
 	return `${sliceCells(text, 0, head)}…${sliceCells(text, cells - tail, tail)}`;
 }
 
-const MODE_LINE: Record<ChatMode, string> = {
+const modeLines = (noun: string): Record<ChatMode, string> => ({
 	default: 'Mode: default (edits ask for approval)',
-	acceptEdits: 'Mode: auto-accept edits (this chat only)',
+	acceptEdits: `Mode: auto-accept edits (this ${noun} only)`,
 	plan: 'Mode: plan (yena researches and proposes a plan; nothing is changed until you approve it)',
-	auto: 'Mode: auto (a classifier approves or denies tool calls, asks when unsure; this chat only)',
-};
+	auto: `Mode: auto (a classifier approves or denies tool calls, asks when unsure; this ${noun} only)`,
+});
 
-export function formatModeLine(mode: ChatMode, error?: string, scrub: Scrub = s => s): string {
-	const line = error === undefined ? MODE_LINE[mode] : `Auto mode is unavailable: ${scrub(error)}. ${MODE_LINE[mode]}`;
+export function formatModeLine(mode: ChatMode, error?: string, scrub: Scrub = s => s, noun = 'chat'): string {
+	const text = modeLines(noun)[mode];
+	const line = error === undefined ? text : `Auto mode is unavailable: ${scrub(error)}. ${text}`;
 	return paint(sgr().muted, line);
 }
 
@@ -251,12 +305,16 @@ export function formatPlanNotes(notes: readonly PlanNote[], scrub: Scrub): strin
 		.join('\n');
 }
 
-export function formatOut(out: Out, scrub: Scrub, reveal: Scrub = scrub, width?: number): string {
+export function formatOut(out: Out, scrub: Scrub, reveal: Scrub = scrub, width?: number, profile?: Pick<ChatProfile, 'agents' | 'noun'>): string {
 	switch (out.kind) {
+		case 'profile-line': {
+			const agent = profile && Object.hasOwn(profile.agents, out.agent) ? profile.agents[out.agent] : undefined;
+			return formatProfileLine({label: agent?.label ?? out.agent, tone: agent?.tone ?? 'teal', text: out.text}, scrub, width);
+		}
 		case 'audit':
-			return formatAudit(out.entry, scrub, reveal, width);
+			return formatAudit(out.entry, scrub, reveal, width, nounOf(profile));
 		case 'mode':
-			return formatModeLine(out.mode, out.error, scrub);
+			return formatModeLine(out.mode, out.error, scrub, nounOf(profile));
 		case 'account':
 			return formatNotice(
 				out.reason === 'pinned'

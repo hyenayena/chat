@@ -12,6 +12,8 @@ export * from './contract/shell.js';
 export * from './contract/scrub.js';
 export * from './contract/reveal.js';
 export * from './contract/provider.js';
+export * from './contract/profile.js';
+export {openProfileChat, registerChatProfile, profileSessions, resumeProfileChat} from './profiles.js';
 export * from './contract/validate.js';
 export {chatProvider, chatProviders, registerChatProvider} from './registry.js';
 export {currentChat, type CurrentChat} from './current.js';

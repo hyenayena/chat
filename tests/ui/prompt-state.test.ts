@@ -411,3 +411,8 @@ test('with no header the tiers switch at the terminal rows they always did', () 
 	assert.equal(at(17).compactChoices, false);
 	assert.equal(at(24).budget, 21);
 });
+
+test('the always option names the noun', () => {
+	assert.equal(choicesFor(toolReq()).find(c => c.id === 'always')?.label, 'Always allow in this chat');
+	assert.equal(choicesFor(toolReq(), 'clan').find(c => c.id === 'always')?.label, 'Always allow in this clan');
+});

@@ -58,10 +58,10 @@ export interface Choice {
 
 export const isRestricted = (req: ToolRequest): boolean => req.defaultToNo || req.oversize;
 
-export function choicesFor(req: ToolRequest): Choice[] {
+export function choicesFor(req: ToolRequest, noun = 'chat'): Choice[] {
 	const out: Choice[] = [{id: 'allow', label: 'Allow once', hotkey: 'y'}];
 	if (req.always !== false && !isRestricted(req)) {
-		out.push({id: 'always', label: 'Always allow in this chat', hotkey: 'a'});
+		out.push({id: 'always', label: `Always allow in this ${noun}`, hotkey: 'a'});
 	}
 	out.push(
 		{id: 'deny', label: 'Deny', hotkey: 'n'},

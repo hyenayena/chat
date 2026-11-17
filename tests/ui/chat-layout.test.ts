@@ -146,3 +146,16 @@ test('prompt and viewer budgets come from the live cap', () => {
 	assert.equal(viewerHeight(10, 0), 7);
 	assert.equal(viewerHeight(5, 9), 3);
 });
+
+test('the typing row drops with the extra tool rows and never shows in the tiny tier', () => {
+	const roomy = liveLayout(needs({rows: 40, typing: 1}));
+	assert.equal(roomy.typing, 1);
+	assert.equal(liveLayout(needs({rows: 40})).typing, 0);
+	assert.equal(liveLayout(needs({rows: ROW_BREAKPOINTS.short - 1, typing: 1})).typing, 0);
+	for (const rows of ROWS) {
+		const h = liveLayout(needs({rows, typing: 1, headerHeight: 0}));
+		assert.ok(h.typing <= 1);
+		if (h.typing === 1) assert.ok(h.tools >= 1, `${rows}`);
+		assert.ok(h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.hint + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
+	}
+});

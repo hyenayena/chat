@@ -98,6 +98,7 @@ export type FakeOptions = {
 	prompts?: Awaited<ReturnType<ChatProvider['prompts']>>;
 	sessionList?: Awaited<ReturnType<ChatProvider['sessions']>>;
 	askImpl?: ChatProvider['ask'];
+	titles?: Record<string, string>;
 };
 
 export function makeProvider(o: FakeOptions = {}): Fake {
@@ -107,6 +108,7 @@ export function makeProvider(o: FakeOptions = {}): Fake {
 		id,
 		label: o.label ?? 'Fake Chat',
 		modes: o.modes ?? ['default', 'plan'],
+		profiles: true,
 		redact: t => t,
 		admit: async origin => {
 			f.admits.push(origin);
@@ -150,7 +152,7 @@ export function makeProvider(o: FakeOptions = {}): Fake {
 		history: o.history ?? (async () => []),
 		prompts: async () => o.prompts ?? [],
 		detail: async () => [],
-		title: async () => undefined,
+		title: async id => o.titles?.[id],
 		rename: async () => {},
 		projectDir: () => o.projectDir ?? '/tmp/fake-project',
 		running: async () => o.running ?? {sessions: [], starting: false},

@@ -1,6 +1,7 @@
 import type {CommandBridge} from '../../../../src/api.js';
 import type {ChatController, ToolPatch} from './events.js';
 import type {ChatMode} from './permission.js';
+import type {ChatProfile} from './profile.js';
 import type {ShellFeed} from './shell.js';
 import type {ChatUsage} from './usage.js';
 
@@ -60,6 +61,7 @@ export type OpenRequest = {
 	draft?: string;
 	mode?: ChatMode;
 	keep?: boolean;
+	profile?: ChatProfile;
 };
 
 export type OpenEnv = {
@@ -114,6 +116,7 @@ export interface ChatProvider {
 	readonly id: string;
 	readonly label: string;
 	readonly modes: readonly ChatMode[];
+	readonly profiles?: true;
 	redact(text: string): string;
 	admit(origin: Origin): Promise<void>;
 	open(req: OpenRequest, env: OpenEnv): Promise<OpenedChat | undefined>;

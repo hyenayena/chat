@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.5.7): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.6.0): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -46,7 +46,7 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 ## Public entries
 
 - `src/public.ts`: the contract, pure.
-- `src/public-ui.ts`: the UI, React and Ink allowed: `createChatElement`, `createPermissionElement`, `createPickerElement`, `createShellElement`, `createWaitingElement`, `formatBanner`, `formatFileCard`, `assistantPrint`, `assistantRows`, `formatNotice`, `formatUserLine`, `listProjectFiles`, and the types `ChatUiHelpers`, `ChatViewProps`, `ListPickerProps`, `PermissionElementProps`, `WaitingViewProps`, `Scrub`.
+- `src/public-ui.ts`: the UI, React and Ink allowed: `createChatElement`, `createPermissionElement`, `createPickerElement`, `createShellElement`, `createWaitingElement`, `formatBanner`, `formatFileCard`, `assistantPrint`, `assistantRows`, `formatNotice`, `formatProfileLine`, `formatUserLine`, `listProjectFiles`, and the types `ChatUiHelpers`, `ChatViewProps`, `ListPickerProps`, `PermissionElementProps`, `WaitingViewProps`, `Scrub`.
 
 ## For other modules
 
@@ -74,6 +74,16 @@ try {
 	await session.end();
 }
 ```
+
+### Module profiles (0.6.0)
+
+A module opens a chat with its own characters through `openProfileChat(profile, ctx)` (`src/profiles.ts`, exported from `src/public.ts`). The `ChatProfile` (`src/contract/profile.ts`) is plain data: an id and owner, an optional banner, the text appended to the system prompt, the main tools, up to 8 agents (`description`, `prompt`, `label`, `tone`, optional `tier`), `turnAgentCalls` (1 to 8), `keepAliveMs` (at most 30 minutes), `mainTier`, `loadInstructions: false` and `passWord`. `checkProfile` validates it, applies the caps (`PROFILE_LIMITS`) and returns a deep-frozen copy; a bad field throws `Invalid chat profile: <field>`. Tones are the names of `PROFILE_TONES` (`teal`, `green`, `yellow`, `orange`, `blue`, `violet`), mapped onto existing theme tones.
+The profile opens only from the user's console, only on a provider that sets `profiles: true`, always as a new chat that attaches to nothing and is not kept running. While it is open, `chat send` and passthrough commands from any origin but the user are refused (`A module chat takes messages only from the user`).
+In the chat, the last text of a persona's `Agent`/`Task`/`SendMessage` call prints as one coloured line (`●` and the label on the persona's tone, Markdown body), once the call's result or its background task ends; the tool card is hidden unless the call failed, and a reply equal to the `passWord` (or starting with `<passWord>:`) prints nothing.
+
+A profile may set `noun` (2 to 16 lowercase letters, default `chat`): while it is open the UI calls the conversation by that word in the title (`New clan`), the closing line, the console panel label, the mode and always-allow texts and the "is answering" console error (`nounOf`, `capNoun`). Command names stay `chat`.
+A module registers a source with `registerChatProfile({id, owner, build(args)})`; the profile's opaque `args` (at most 16 names) let it rebuild the profile later. The chat binds each profile session to its profile in `<YENA_DATA>/chat/profiles.json` (1000 newest) and keeps the finished persona lines in `<YENA_DATA>/chat/profile-lines/<session>.jsonl` (at most 500 lines and 1 MiB each). `profileSessions(id, limit)` lists a module's sessions and `resumeProfileChat(sessionId, ctx)` reopens one with the profile rebuilt and the saved lines put back after the user messages they followed. Such sessions are not in the `chat resume` picker or prefix match (a full id reopens them through their module), and `chat fork` and `chat rewind` refuse them.
+The profile's agents show no agent panel boxes, no running tool rows and no background-task rows (the state is still reduced, so the viewer has it). While a call is pending the live area shows a row `<Label>, <Label> typing…` (labels in their tones, at most 3 names then `+N`) above the input. A click on a name there opens that agent's raw run in the subagent viewer (Esc closes it; ←/→ do not switch to other agents). This click is the only way to reach a profile agent's run: the panel selection keys (↓, Enter) and Ctrl+O never list it. An interrupt (Esc) drops the pending calls: no line is printed for them and the row goes away.
 
 ### Activity in the console panel
 

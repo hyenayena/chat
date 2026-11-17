@@ -1,17 +1,21 @@
 import type {CommandContext, Logger} from '../../../src/api.js';
+import {nounOf, type ChatProfile} from './contract/profile.js';
 import type {ChatProvider, OpenedChat, Origin} from './contract/provider.js';
 import {markUserChat, setCurrentChat} from './current.js';
 import {endModuleSessions} from './module-sessions.js';
 import {NEEDS_MOUNT_MESSAGE, runChatView, type FlowDeps, type FlowRequest} from './open-flow.js';
 import {noopLog} from './log.js';
 
-export const SEND_REFUSED = 'The open chat does not take messages from unattended runs';
-export const ANSWERING = 'A chat is answering; start the new one when it is done (or press Esc in it).';
+export const sendRefused = (noun = 'chat'): string => `The open ${noun} does not take messages from unattended runs`;
+export const answering = (noun = 'chat'): string => `A ${noun} is answering; start the new one when it is done (or press Esc in it).`;
+export const SEND_REFUSED = sendRefused();
+export const ANSWERING = answering();
 
 export type HeldChat = {
 	provider: ChatProvider;
 	origin: Origin;
 	opened: OpenedChat | undefined;
+	profile?: ChatProfile;
 	deliver: ((text: string) => void) | undefined;
 	close: () => void;
 	done: Promise<void>;
@@ -47,7 +51,7 @@ export function createChatHub(deps: ChatHubDeps = {}): ChatHub {
 				await provider.admit(req.origin);
 				await endModuleSessions('replaced', t => ctx.print(t));
 				const previous = hub.current;
-				if (options.refuseWhileRunning && previous?.opened?.session.state === 'running') throw new Error(ANSWERING);
+				if (options.refuseWhileRunning && previous?.opened?.session.state === 'running') throw new Error(answering(nounOf(previous.profile)));
 				if (req.attach !== true && previous?.opened?.session.state === 'idle') previous.opened.session.end?.();
 				if (previous) {
 					previous.close();
@@ -60,6 +64,7 @@ export function createChatHub(deps: ChatHubDeps = {}): ChatHub {
 					provider,
 					origin: req.origin,
 					opened: undefined,
+					...(req.profile && {profile: req.profile}),
 					deliver: undefined,
 					close: () => {
 						closeRequested = true;

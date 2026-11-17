@@ -1,4 +1,4 @@
-import {allocateRows, fixedRowBudget, liveRowCap, type RowPart} from '../kit.js';
+import {allocateRows, fixedRowBudget, liveRowCap, rowTier, type RowPart} from '../kit.js';
 import {layoutPanel, PANEL, type PanelLayout} from './agent-panel.js';
 import type {AgentsState} from './agents.js';
 import {PLAN, planWidgetRows, type PlanView} from './plan-widget.js';
@@ -53,6 +53,7 @@ export type LiveNeeds = {
 	tools: number;
 	tail: number;
 	hint: boolean;
+	typing?: number;
 };
 
 export type LiveHeights = {
@@ -65,6 +66,7 @@ export type LiveHeights = {
 	tail: number;
 	rules: number;
 	hint: number;
+	typing: number;
 	budget: number;
 	used: number;
 };
@@ -82,6 +84,7 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 	const input = Math.max(1, want(needs.inputNeeded));
 	const vim = needs.vim ? 1 : 0;
 	const hint = needs.hint ? 1 : 0;
+	const typing = rowTier(rows) === 'tiny' ? 0 : Math.min(1, want(needs.typing ?? 0));
 	const parts: RowPart[] = [
 		{id: 'status', min: 1, desired: 1, priority: 100, fixed: true},
 		{id: 'input', min: 1, desired: 1, priority: 90, fixed: true},
@@ -90,6 +93,7 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 		{id: 'vim', min: vim, desired: vim, priority: 70, fixed: true},
 		{id: 'toolMin', min: Math.min(1, tools), desired: Math.min(1, tools), priority: 60},
 		{id: 'toolExtra', min: 0, desired: Math.max(0, tools - 1), priority: 50},
+		{id: 'typing', min: 0, desired: typing, priority: 50},
 		{id: 'rules', min: 2, desired: 2, priority: 40},
 		{id: 'inputExtra', min: 0, desired: input - 1, priority: 30},
 		{id: 'hint', min: hint, desired: hint, priority: 20},
@@ -111,6 +115,7 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 		tail: h.tail ?? 0,
 		rules: h.rules ?? 0,
 		hint: h.hint ?? 0,
+		typing: h.typing ?? 0,
 		budget: alloc.budget,
 		used: alloc.used,
 	};

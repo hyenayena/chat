@@ -34,6 +34,7 @@ export type AgentBox = {
 	touchedAt?: number;
 	reopened?: {status: AgentStatus; finishedTurn?: number; report?: string; entries: number};
 	staleStopped?: true;
+	hidden?: true;
 };
 
 export type AgentsState = {
@@ -476,6 +477,23 @@ export const agentChildren = (state: AgentsState, id: string): AgentBox[] =>
 	state.order.map(i => state.boxes.get(i)!).filter(b => b !== undefined && b.parent === id);
 
 export const anyRunning = (state: AgentsState): boolean => [...state.boxes.values()].some(b => b.status === 'running');
+
+// Boxes of a module profile's agents stay in the state (the viewer reads them) but are not drawn in the panel.
+export function hideBoxes(state: AgentsState, hide: (box: AgentBox) => boolean): AgentsState {
+	let boxes: Map<string, AgentBox> | undefined;
+	for (const [id, box] of state.boxes) {
+		if (box.hidden !== true && hide(box)) (boxes ??= new Map(state.boxes)).set(id, {...box, hidden: true});
+	}
+	return boxes ? {...state, boxes} : state;
+}
+
+export function hiddenBoxOf(state: AgentsState, agent: string): string | undefined {
+	for (const id of [...state.order].reverse()) {
+		const box = state.boxes.get(id);
+		if (box?.hidden === true && (box.subagentType === agent || box.spawnName === agent || box.name === agent)) return id;
+	}
+	return undefined;
+}
 
 export function focusAgent(state: AgentsState, focus: {selected?: string | undefined; open?: string | undefined}): AgentsState {
 	const next: AgentsState = {boxes: state.boxes, order: state.order, turn: state.turn, lastTurnEnd: state.lastTurnEnd, running: state.running, scroll: state.scroll};

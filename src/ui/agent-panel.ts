@@ -153,7 +153,14 @@ const windowFrom = (units: Unit[], budget: number, start: number): number => {
 
 const countBoxes = (units: Unit[]): number => units.reduce((n, u) => n + u.places.length, 0);
 
-const fitUnits = (state: AgentsState, look: PanelLook): {units: Unit[]; budget: number; fits: boolean} | undefined => {
+const drawnOnly = (state: AgentsState): AgentsState => {
+	if (![...state.boxes.values()].some(b => b.hidden === true)) return state;
+	const boxes = new Map([...state.boxes].filter(([, b]) => b.hidden !== true));
+	return {...state, boxes, order: state.order.filter(id => boxes.has(id))};
+};
+
+const fitUnits = (full: AgentsState, look: PanelLook): {units: Unit[]; budget: number; fits: boolean} | undefined => {
+	const state = drawnOnly(full);
 	const width = Math.floor(look.columns) - 1;
 	if (state.boxes.size === 0 || rowTier(look.rows) === 'tiny' || !(look.maxRows >= PANEL.tinyHeight) || !(width >= PANEL.minWidth)) return undefined;
 	const budget = Math.floor(look.maxRows);

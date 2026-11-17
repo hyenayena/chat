@@ -439,3 +439,31 @@ test('plan notes have no blank row, even when an item text spans lines', () => {
 	const text = stripStyles(formatPlanNotes([{kind: 'new', steps: 2}, {kind: 'done', text: 'One\n\nTwo'}, {kind: 'finished', done: 2, total: 2}], s => s));
 	assert.ok(text.split('\n').every(row => row.trim() !== ''), JSON.stringify(text));
 });
+
+test('typingRow names the pending agents in their tones, clips to columns-1 and gives click cells', async () => {
+	const {typingRow} = await import('../../src/ui/present.js');
+	const {stripStyles, styledCells, withColorDepth} = await import('../../src/kit.js');
+	const agents = Object.fromEntries(
+		['a', 'b', 'c', 'd', 'e'].map((n, i) => [n, {description: 'd', prompt: 'p', label: n.toUpperCase().repeat(5), tone: (['teal', 'green', 'yellow', 'orange', 'blue'] as const)[i]!}]),
+	);
+	assert.equal(typingRow([], {agents}, 80), undefined);
+	for (const columns of [20, 50, 100]) {
+		const row = withColorDepth('truecolor', () => typingRow(['a', 'b', 'c', 'd', 'e'], {agents}, columns))!;
+		assert.ok(styledCells(row.text) <= columns - 1, `${columns}`);
+		for (const c of row.cells) assert.ok(c.x1 <= columns - 1 && c.x0 < c.x1);
+	}
+	const wide = withColorDepth('none', () => typingRow(['a', 'b', 'c', 'd', 'e'], {agents}, 100))!;
+	assert.equal(stripStyles(wide.text), '  AAAAA, BBBBB, CCCCC +2 typing…');
+	assert.deepEqual(wide.cells.map(c => [c.agent, c.x0, c.x1]), [['a', 2, 7], ['b', 9, 14], ['c', 16, 21]]);
+	const two = withColorDepth('none', () => typingRow(['b', 'a'], {agents}, 100))!;
+	assert.equal(stripStyles(two.text), '  BBBBB, AAAAA typing…');
+	const tinted = withColorDepth('truecolor', () => typingRow(['a', 'b'], {agents}, 100))!;
+	assert.notEqual(tinted.text.split(',')[0], tinted.text);
+});
+
+test('the noun replaces "chat" in the always-allowed and mode lines', () => {
+	const strip = (s: string) => s.replace(/\u001b\[\d+m/g, '');
+	assert.equal(strip(formatAudit({outcome: 'always-allowed', toolName: 'Bash', summary: 'ls'}, scrub, scrub, undefined, 'clan')), 'Always-allowed Bash(ls) for this clan');
+	assert.equal(strip(formatModeLine('acceptEdits', undefined, scrub, 'clan')), 'Mode: auto-accept edits (this clan only)');
+	assert.equal(strip(formatModeLine('acceptEdits')), 'Mode: auto-accept edits (this chat only)');
+});

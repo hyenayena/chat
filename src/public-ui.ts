@@ -1,12 +1,13 @@
 import {formatBanner} from './ui/banner.js';
 import {formatFileCard} from './ui/file-card.js';
-import {assistantPrint, assistantRows, formatNotice, formatUserLine} from './ui/present.js';
+import {assistantPrint, assistantRows, formatNotice, formatProfileLine, formatUserLine} from './ui/present.js';
 import {listProjectFiles} from './files.js';
 
 export {createChatElement, createPickerElement, createPermissionElement, createShellElement, createWaitingElement} from './ui/mount.js';
 export type {ChatViewProps, ListPickerProps, PermissionElementProps, WaitingViewProps} from './ui/mount.js';
 export type {Scrub} from './ui/present.js';
-export {formatBanner, formatFileCard, assistantPrint, assistantRows, formatNotice, formatUserLine, listProjectFiles};
+export type {ProfileLineView} from './ui/present.js';
+export {formatBanner, formatFileCard, assistantPrint, assistantRows, formatNotice, formatProfileLine, formatUserLine, listProjectFiles};
 
 export type ChatUiHelpers = {
 	formatBanner: typeof formatBanner;
@@ -14,6 +15,7 @@ export type ChatUiHelpers = {
 	assistantPrint: typeof assistantPrint;
 	assistantRows: typeof assistantRows;
 	formatNotice: typeof formatNotice;
+	formatProfileLine: typeof formatProfileLine;
 	formatUserLine: typeof formatUserLine;
 	listProjectFiles: typeof listProjectFiles;
 };

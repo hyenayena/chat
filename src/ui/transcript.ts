@@ -2,9 +2,10 @@ import type {AccountReason, ChatEvent, RouteInfo, ToolPatch, TurnOutcome, UiEven
 import type {RateLimitInfo} from '../public.js';
 import {PLAN_TOOLS, planChanges, type PlanItem, type PlanNote} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
-import type {Tier} from '../public.js';
+import type {ChatProfile, Tier} from '../public.js';
 import type {TurnSummary} from '../public.js';
 import {isFoldable} from './tool-kind.js';
+import {dropCalls, flushCalls, isProfileId, newTracker, trackAgentMessage, trackResult, trackTask, trackUse, type ProfileLine, type ProfileTracker} from './profile-calls.js';
 import {showSummary} from './turn-summary.js';
 
 export const LIVE = {
@@ -56,6 +57,7 @@ export interface TranscriptState {
 	pendingApiError?: string;
 	account?: string;
 	lastSummary?: TurnSummary;
+	profile?: ProfileTracker;
 }
 
 export type ToolOut = {
@@ -85,6 +87,7 @@ export type Out =
 	| {kind: 'plan-note'; notes: PlanNote[]}
 	| {kind: 'route-block'; route: RouteInfo; previous?: Tier}
 	| {kind: 'route'; pinned?: Tier}
+	| {kind: 'profile-line'; agent: string; text: string}
 	| {kind: 'blank'};
 
 export const ROUTE_TOOL_ID = 'yena-route';
@@ -96,7 +99,7 @@ export interface Step {
 }
 
 export function initialTranscript(
-	init: {model?: string; sessionId?: string; mode?: ChatMode; pending?: number; account?: string; plan?: readonly PlanItem[]} = {},
+	init: {model?: string; sessionId?: string; mode?: ChatMode; pending?: number; account?: string; plan?: readonly PlanItem[]; profile?: ChatProfile} = {},
 ): TranscriptState {
 	return {
 		...(init.account !== undefined && {account: init.account}),
@@ -116,11 +119,13 @@ export function initialTranscript(
 		pending: init.pending ?? 0,
 		mode: init.mode ?? 'default',
 		approvals: 0,
+		...(init.profile && {profile: newTracker(init.profile)}),
 	};
 }
 
 export function markInterrupting(state: TranscriptState): TranscriptState {
-	return state.phase === 'running' ? {...state, phase: 'interrupting'} : state;
+	if (state.phase !== 'running') return state;
+	return {...state, phase: 'interrupting', ...(state.profile && {profile: dropCalls(state.profile)})};
 }
 
 export function setNotice(state: TranscriptState, notice: string | undefined): TranscriptState {
@@ -131,6 +136,7 @@ export function resetTranscript(state: TranscriptState): TranscriptState {
 	return {
 		...initialTranscript({model: state.model, mode: state.mode, ...(state.account !== undefined && {account: state.account})}),
 		phase: state.phase,
+		...(state.profile && {profile: {...state.profile, calls: new Map(), persona: new Map(), taskCall: new Map()}}),
 		...(state.limit !== undefined && {limit: state.limit}),
 	};
 }
@@ -288,10 +294,43 @@ export function reduceTranscript(state: TranscriptState, event: ChatEvent): Step
 	return {state: {...step.state, fold}, out};
 }
 
+const lineOuts = (lines: ProfileLine[]): Out[] => lines.map(l => ({kind: 'profile-line', agent: l.agent, text: l.text}));
+
+function reduceUiProfile(state: TranscriptState, e: UiEvent): Step {
+	const t = state.profile;
+	if (!t) return reduceUi(state, e);
+	const step = reduceUi(state, e);
+	switch (e.kind) {
+		case 'tool-use':
+			return {...step, state: {...step.state, profile: trackUse(t, e)}};
+		case 'agent-message':
+			return {...step, state: {...step.state, profile: trackAgentMessage(t, e)}};
+		case 'task': {
+			const r = trackTask(t, e);
+			return {state: {...step.state, profile: r.t}, out: [...(r.known ? [] : step.out), ...lineOuts(r.lines)]};
+		}
+		case 'tool-result': {
+			const r = trackResult(t, e);
+			return {state: {...step.state, profile: r.t}, out: r.hide || (!t.calls.has(e.toolUseId) && isProfileId(t, e.toolUseId)) ? lineOuts(r.lines) : step.out};
+		}
+		default:
+			return step;
+	}
+}
+
 function reduceEvent(state: TranscriptState, event: ChatEvent): Step {
+	const step = reduceEventBase(state, event);
+	const t = step.state.profile;
+	if (!t || (event.type !== 'sent' && event.type !== 'turn-end')) return step;
+	if (event.type === 'turn-end' && event.outcome === 'interrupted') return {...step, state: {...step.state, profile: dropCalls(t)}};
+	const flushed = flushCalls(t);
+	return {state: {...step.state, profile: flushed.t}, out: [...lineOuts(flushed.lines), ...step.out]};
+}
+
+function reduceEventBase(state: TranscriptState, event: ChatEvent): Step {
 	switch (event.type) {
 		case 'ui':
-			return reduceUi(state, event.event);
+			return reduceUiProfile(state, event.event);
 		case 'state':
 			if (event.state === 'running') {
 				if (state.phase !== 'idle') return {state, out: []};

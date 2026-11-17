@@ -47,6 +47,7 @@ export interface PermissionPromptProps {
 	total: number;
 	approvals: number;
 	notice?: string;
+	noun?: string;
 }
 
 export function headerPrefix(position: number, total: number, approvals: number): string {
@@ -58,7 +59,7 @@ export function headerPrefix(position: number, total: number, approvals: number)
 
 export function PermissionPrompt(props: PermissionPromptProps) {
 	const {request, state, layout, reveal} = props;
-	const choices = choicesFor(request);
+	const choices = choicesFor(request, props.noun);
 	const restricted = isRestricted(request);
 	const all = React.useMemo(() => toolBodyRows(request, reveal, layout.width), [request, reveal, layout.width]);
 	const prefix = headerPrefix(props.position, props.total, props.approvals);

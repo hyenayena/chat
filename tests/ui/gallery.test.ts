@@ -21,7 +21,7 @@ test('the rows hold only SGR escapes and the sample pieces', async () => {
 	const rows = withColorDepth('256', () => render({width: 79, rows: 24, depth: '256', ascii: false}));
 	const rest = rows.join('\n').replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '');
 	assert.ok(!rest.includes(ESC));
-	for (const part of ['Fix the failing test', 'thinking', 'Edit', '$ npm test', 'Error: ']) assert.ok(rest.includes(part), part);
+	for (const part of ['Fix the failing test', 'Skeptic', 'thinking', 'Edit', '$ npm test', 'Error: ']) assert.ok(rest.includes(part), part);
 });
 
 test('registering the section is accepted once', () => {

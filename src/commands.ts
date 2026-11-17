@@ -7,9 +7,12 @@ import {makeScrub} from './contract/scrub.js';
 import {usageLines} from './contract/usage.js';
 import {clockTime} from './clock-time.js';
 import {createFixCommand} from './fix.js';
-import {createChatHub, SEND_REFUSED, type ChatHub, type HeldChat} from './hub.js';
+import {createChatHub, sendRefused, type ChatHub, type HeldChat} from './hub.js';
 import {errClass, noopLog} from './log.js';
 import {originOf} from './origin.js';
+import {checkProfile, nounOf, type ChatProfile, type ProfileSessionInfo} from './contract/profile.js';
+import {createProfileStore, MAX_BINDINGS, SESSION_ID_RE} from './profile-bindings.js';
+import {resolveProfile, setProfileOpener, setProfileSessions} from './profiles.js';
 import {createPrefs, type Prefs} from './prefs.js';
 import {chatProvider, chatProviders} from './registry.js';
 import {chatTab} from './settings.js';
@@ -33,6 +36,8 @@ const RESUME_USAGE = 'Usage: chat resume [session]';
 const STOP_USAGE = 'Usage: chat stop [session]';
 const MCP_USAGE = 'Usage: chat mcp [reconnect <server>]';
 const NO_CHAT = 'No chat is open; start one with "chat".';
+const PROFILE_OPEN_REFUSED = "A module chat opens only from the user's console";
+const PROFILE_SEND_REFUSED = 'A module chat takes messages only from the user';
 const COMMAND_NAME = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$/;
 
 const SLOT_WORD = /^(?:<([A-Za-z0-9_][\w-]*)(?:…|\.\.\.)?>|\[([A-Za-z0-9_][\w-]*)(?:…|\.\.\.)?\])(?:…|\.\.\.)?$/u;
@@ -164,9 +169,10 @@ const OWN_NAMES = new Set([...OWN_SUBCOMMANDS.map(s => s.name), 'help']);
 export function createChatCommands(deps: ChatCommandDeps): Command[] {
 	const log = deps.log ?? noopLog;
 	const prefs: Prefs = createPrefs({dataDir: deps.dataDir, log});
+	const profiles = createProfileStore({dataDir: deps.dataDir, log});
 	const hub: ChatHub = createChatHub({
 		log,
-		flow: () => ({...deps.flow, log, inputMode: () => (prefs.cached().inputMode === 'vim' ? 'vim' : 'normal')}),
+		flow: () => ({...deps.flow, log, profiles, inputMode: () => (prefs.cached().inputMode === 'vim' ? 'vim' : 'normal')}),
 	});
 
 	const openSession = (): OpenedChat | undefined => {
@@ -208,9 +214,10 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 	};
 
 	const gateSend = (held: HeldChat, origin: Origin): void => {
+		if (held.profile && origin !== 'user') throw new Error(PROFILE_SEND_REFUSED);
 		if (isInteractive(origin)) return;
 		const admit = held.opened?.admitSend;
-		if (typeof admit !== 'function') throw new Error(SEND_REFUSED);
+		if (typeof admit !== 'function') throw new Error(sendRefused(nounOf(held.profile)));
 		admit.call(held.opened, origin);
 	};
 
@@ -223,6 +230,46 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		if (model !== undefined && !provider.validModel(model)) throw new Error(`Invalid model "${plain(model).slice(0, 100)}". ${NEW_USAGE}`);
 		await hub.replaceChat(provider, {origin: originOf(ctx), fresh: true, attach, ...(model !== undefined && {model}), ...(await prefsFor(provider))}, ctx);
 	};
+
+	const openProfile = async (profile: ChatProfile, ctx: CommandContext): Promise<void> => {
+		const origin = originOf(ctx);
+		if (origin !== 'user') throw new Error(PROFILE_OPEN_REFUSED);
+		remember(ctx);
+		const provider = await defaultProvider();
+		if (provider.profiles !== true) throw new Error(`The chat provider "${plain(provider.id).slice(0, 32)}" does not support module profiles`);
+		log.info('profile chat opened', {profile: profile.id, owner: profile.owner, agents: Object.keys(profile.agents).length});
+		await hub.replaceChat(provider, {origin, fresh: true, attach: false, keep: false, mode: 'default', profile}, ctx);
+	};
+	setProfileOpener(openProfile);
+
+	const resumeProfile = async (sessionId: string, ctx: CommandContext): Promise<void> => {
+		const origin = originOf(ctx);
+		if (origin !== 'user') throw new Error(PROFILE_OPEN_REFUSED);
+		remember(ctx);
+		const bound = await profiles.lookup(sessionId);
+		if (!bound) throw new Error('Not a module session');
+		const source = resolveProfile(bound.id);
+		if (!source) throw new Error(`This session belongs to module "${plain(bound.owner).slice(0, 32)}", which is not installed`);
+		const profile = checkProfile(await source.build([...bound.args]));
+		if (profile.id !== bound.id) throw new Error('Invalid chat profile: id');
+		const provider = await defaultProvider();
+		if (provider.profiles !== true) throw new Error(`The chat provider "${plain(provider.id).slice(0, 32)}" does not support module profiles`);
+		log.info('profile chat resume requested', {profile: profile.id, session8: sessionId.slice(0, 8)});
+		await hub.replaceChat(provider, {origin, fresh: false, resume: sessionId, attach: false, keep: false, mode: 'default', profile}, ctx);
+	};
+
+	const sessionsOf = async (id: string, limit: number): Promise<ProfileSessionInfo[]> => {
+		const provider = await defaultProvider();
+		const out: ProfileSessionInfo[] = [];
+		for (const b of await profiles.listFor(id, MAX_BINDINGS)) {
+			if (out.length >= limit) break;
+			const title = await provider.title(b.sessionId).catch(() => undefined);
+			if (title === undefined) continue;
+			out.push({sessionId: b.sessionId, title, startedAt: b.at, lastAt: b.last, args: [...b.args]});
+		}
+		return out;
+	};
+	setProfileSessions({sessions: sessionsOf, resume: resumeProfile});
 
 	const continueChat = async (args: string[], ctx: CommandContext): Promise<void> => {
 		if (args.length > 0) throw new Error('Usage: chat continue');
@@ -293,8 +340,11 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 	const resumeChat = async (args: string[], ctx: CommandContext): Promise<void> => {
 		if (args.length > 1) throw new Error(RESUME_USAGE);
 		remember(ctx);
+		const wantedId = args[0];
+		if (wantedId !== undefined && SESSION_ID_RE.test(wantedId) && (await profiles.has(wantedId))) return resumeProfile(wantedId, ctx);
 		const provider = await activeProvider();
-		const sessions = await provider.sessions();
+		const bound = await profiles.ids();
+		const sessions = (await provider.sessions(wantedId === undefined ? 60 : undefined)).filter(s => !bound.has(s.sessionId));
 		const start = async (sessionId: string): Promise<void> => {
 			log.info('chat resume requested', {session8: sessionId.slice(0, 8)});
 			await hub.replaceChat(provider, {origin: originOf(ctx), fresh: false, resume: sessionId, ...(await prefsFor(provider))}, ctx);
@@ -311,9 +361,14 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 			title: 'Resume a chat',
 			empty: 'No earlier chats in this project',
 			action: 'resume',
-			items: sessions.map(x => ({id: x.sessionId, label: x.title, meta: `${ago(x.modified, now)} · ${x.prompts} msg`})),
+			items: sessions.slice(0, 30).map(x => ({id: x.sessionId, label: x.title, meta: `${ago(x.modified, now)} · ${x.prompts} msg`})),
 		});
 		if (picked) await start(picked);
+	};
+
+	const refuseBound = async (sessionId: string): Promise<void> => {
+		const bound = await profiles.lookup(sessionId);
+		if (bound) throw new Error(`Fork and rewind are not available for a ${bound.noun ?? 'module'} session`);
 	};
 
 	const forkChat = async (args: string[], ctx: CommandContext): Promise<void> => {
@@ -322,6 +377,7 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		const provider = await activeProvider();
 		const id = await currentSessionId(provider);
 		if (!id) throw new Error('There is no chat to fork yet; send a message first.');
+		await refuseBound(id);
 		log.info('chat fork requested', {session8: id.slice(0, 8)});
 		await hub.replaceChat(provider, {origin: originOf(ctx), fresh: false, resume: id, fork: true, ...(await prefsFor(provider))}, ctx);
 	};
@@ -332,6 +388,7 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		const opened = openSession();
 		const id = opened?.session.sessionId;
 		if (!opened || !id) throw new Error('There is no open chat to rewind yet.');
+		await refuseBound(id);
 		const provider = hub.current!.provider;
 		if (opened.session.state === 'running') throw new Error('yena is still answering; wait or press Esc in the chat.');
 		const prompts = (await provider.prompts(id)).reverse();

@@ -2,7 +2,8 @@ import {basename} from 'node:path';
 import React, {createElement, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
 import {Box, Text, useInput, usePaste, type Key} from 'ink';
 import type {PrintOptions, ViewHost} from '../../../../src/api.js';
-import type {ChatController, ChatEvent} from '../public.js';
+import type {ChatController, ChatEvent, ChatProfile} from '../public.js';
+import {nounOf} from '../public.js';
 import {limitIndicator, systemClock, type Clock} from '../public.js';
 import {MODE_CYCLE} from '../public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest} from '../public.js';
@@ -11,7 +12,8 @@ import {navigate, revealAgent, type PanelMove} from './agent-panel.js';
 import {headerLayout, liveLayout, promptBudget, viewerHeight} from './chat-layout.js';
 import {createAgentStore} from './agent-store.js';
 import {agentViewLines} from './agent-view.js';
-import {focusAgent, initialAgents, reconcileAgents, reduceAgents, seedFromTasks} from './agents.js';
+import {focusAgent, hiddenBoxOf, hideBoxes, initialAgents, reconcileAgents, reduceAgents, seedFromTasks} from './agents.js';
+import {isProfileBox, isProfileId, pendingPersonas} from './profile-calls.js';
 import {ChatHeader} from './ChatHeader.js';
 import {tidyBlock} from './print-block.js';
 import {createStore} from './store.js';
@@ -31,7 +33,9 @@ import {
 	modeHint,
 	routeBarText,
 	queuedLines,
+	typingRow,
 	type Scrub,
+	type TypingCell,
 } from './present.js';
 import {ARM_MS, layoutPrompt, type QuestionPromptState, type ToolPromptState} from './prompt-state.js';
 import {newPromptEntry, promptEntryKey, promptEntryPaste, rearmEntry, type PromptEntry} from './prompt-entry.js';
@@ -59,6 +63,8 @@ export interface ChatViewProps {
 	print: (text: string, options?: PrintOptions) => void;
 	close: () => void;
 	scrub: Scrub;
+	profile?: ChatProfile;
+	onProfileLine?: (line: {agent: string; text: string}) => void;
 	initialModel?: string;
 	initialSessionId?: string;
 	initialAccount?: string;
@@ -90,6 +96,7 @@ export function escapeInterrupts(now: number, turnSince: number, armedAt: number
 	return armedAt !== undefined && now - armedAt <= ESC_AGAIN_MS;
 }
 export const NEW_CHAT_TITLE = 'New chat';
+export const newTitleOf = (noun: string): string => `New ${noun}`;
 export const MAX_QUEUED = 20;
 const MAX_UNDO = 100;
 const MAX_TIMER_MS = 2_000_000_000;
@@ -171,6 +178,7 @@ export function ChatView(props: ChatViewProps) {
 	const {focused, columns} = useViewHost(props.host);
 	const host = props.host;
 	const clock = props.clock ?? systemClock;
+	const noun = nounOf(props.profile);
 
 	const tRef = useRef<TranscriptState>(
 		initialTranscript({
@@ -179,6 +187,7 @@ export function ChatView(props: ChatViewProps) {
 			...(props.initialAccount !== undefined && {account: props.initialAccount}),
 			mode: controller.mode,
 			pending: controller.pendingPermissions.length,
+			...(props.profile && {profile: props.profile}),
 			...(controller.plan !== undefined && {plan: controller.plan}),
 		}),
 	);
@@ -204,9 +213,9 @@ export function ChatView(props: ChatViewProps) {
 	const commandListRef = useRef<{at: number; list: ViewCommandInfo[]} | undefined>(undefined);
 	const vimRef = useRef<VimState>(vimStart);
 	const viewerRef = useRef<Viewer | undefined>(undefined);
-	const shownRef = useRef({columns: 0, rows: 0, inputRows: 0, vimNormal: false, statusBar: false, waiting: false, belowInput: 0, panelHeight: 0});
+	const shownRef = useRef({columns: 0, rows: 0, inputRows: 0, vimNormal: false, statusBar: false, waiting: false, belowInput: 0, panelHeight: 0, topRules: 0, typing: [] as TypingCell[]});
 	const agentsRef = useRef<ReturnType<typeof createAgentStore> | undefined>(undefined);
-	if (!agentsRef.current) agentsRef.current = createAgentStore(seedFromTasks(initialAgents(), controller.tasks ?? []));
+	if (!agentsRef.current) agentsRef.current = createAgentStore(seedFromTasks(initialAgents(), (controller.tasks ?? []).filter(task => !(props.profile && task.subagentType !== undefined && Object.hasOwn(props.profile.agents, task.subagentType)))));
 	const agents = agentsRef.current;
 	const agentsState = useSyncExternalStore(agents.subscribe, agents.get);
 	const agentTopRef = useRef(-1);
@@ -302,7 +311,9 @@ export function ChatView(props: ChatViewProps) {
 		(event: ChatEvent) => {
 			if (closedRef.current) return;
 			lastEventRef.current = Date.now();
-			agents.set(reduceAgents(agents.get(), event, Date.now()));
+			const reduced = reduceAgents(agents.get(), event, Date.now());
+			const tracker = tRef.current.profile;
+			agents.set(tracker ? hideBoxes(reduced, box => isProfileBox(tracker, box)) : reduced);
 			if (event.type === 'turn-end' || event.type === 'sent' || event.type === 'state' || (event.type === 'ui' && event.event.kind === 'task')) {
 				reconcileNow();
 			}
@@ -329,7 +340,7 @@ export function ChatView(props: ChatViewProps) {
 			for (const out of step.out) {
 				if (out.kind === 'blank') continue;
 				if (out.kind === 'turn-summary') {
-					print(formatOut(out, scrub, reveal, lastWidthRef.current || undefined), {render: w => formatOut(out, scrub, reveal, w)});
+					print(formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile), {render: w => formatOut(out, scrub, reveal, w, props.profile)});
 					continue;
 				}
 				if (out.kind === 'assistant') {
@@ -339,11 +350,11 @@ export function ChatView(props: ChatViewProps) {
 					print(block.text, block.options);
 					continue;
 				}
-				if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'audit' || out.kind === 'route-block') {
-					if (out.kind === 'tool' || out.kind === 'tool-group') beatRef.current++;
+				if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'audit' || out.kind === 'route-block' || out.kind === 'profile-line') {
+					if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'profile-line') beatRef.current++;
 					const width = lastWidthRef.current > 1 ? lastWidthRef.current - 1 : undefined;
-					const text = formatOut(out, scrub, reveal, width);
-					const options: PrintOptions = {render: w => formatOut(out, scrub, reveal, w)};
+					const text = formatOut(out, scrub, reveal, width, props.profile);
+					const options: PrintOptions = {render: w => formatOut(out, scrub, reveal, w, props.profile)};
 					if (out.kind === 'audit') printNotice(text, options);
 					else print(text, options);
 					continue;
@@ -352,7 +363,7 @@ export function ChatView(props: ChatViewProps) {
 					const last = out.notes.filter(n => n.kind === 'done').at(-1);
 					if (last?.kind === 'done') planStore.set({...planStore.get(), flash: {text: last.text, until: Date.now() + PLAN.flashMs}});
 				}
-				const text = formatOut(out, scrub, reveal, lastWidthRef.current || undefined);
+				const text = formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile);
 				if (out.kind === 'mode' || out.kind === 'account' || out.kind === 'route') printNotice(text);
 				else print(text);
 			}
@@ -541,7 +552,7 @@ export function ChatView(props: ChatViewProps) {
 	useEffect(() => {
 		if (!onInbox) return;
 		onInbox(text => {
-			if (closedRef.current) throw new Error('The chat is closed');
+			if (closedRef.current) throw new Error(`The ${noun} is closed`);
 			if (tRef.current.phase !== 'idle') {
 				if (!steerOrQueue(text)) throw new Error(BUSY_HINT);
 				render();
@@ -784,11 +795,12 @@ export function ChatView(props: ChatViewProps) {
 
 	const openAgentKey = (input: string, key: Key) => {
 		const s = agents.get();
+		const hidden = s.boxes.get(s.open!)?.hidden === true;
 		if (key.escape) {
-			focusBox({selected: s.open});
+			focusBox(hidden ? {} : {selected: s.open});
 			return render();
 		}
-		if (key.leftArrow || key.rightArrow) {
+		if ((key.leftArrow || key.rightArrow) && !hidden) {
 			const ids = panelOf(columns, rows).ids;
 			const at = ids.indexOf(s.open!);
 			const next = ids[at < 0 ? 0 : Math.min(ids.length - 1, Math.max(0, at + (key.leftArrow ? -1 : 1)))];
@@ -854,6 +866,20 @@ export function ChatView(props: ChatViewProps) {
 		return true;
 	};
 
+	const openTypingAt = (shown: typeof shownRef.current, raw: ViewMouseEvent): boolean => {
+		const below = shown.belowInput + (shown.vimNormal ? 1 : 0) + (shown.statusBar ? 1 : 0);
+		const inputTop = raw.height - below - shown.inputRows;
+		if (raw.y !== inputTop - shown.topRules - 1) return false;
+		const cell = shown.typing.find(c => raw.x >= c.x0 && raw.x < c.x1);
+		const id = cell ? hiddenBoxOf(agents.get(), cell.agent) : undefined;
+		if (id === undefined) return false;
+		viewerRef.current = undefined;
+		agentTopRef.current = -1;
+		focusBox({open: id});
+		render();
+		return true;
+	};
+
 	const onMouse = (raw: unknown): boolean => {
 		if (!validEvent(raw) || closedRef.current) return false;
 		if (raw.region === 'header') return onHeaderMouse(raw);
@@ -870,6 +896,7 @@ export function ChatView(props: ChatViewProps) {
 		}
 		if (raw.kind !== 'press' || raw.button !== 'left') return false;
 		if (controller.pendingPermissions.length > 0 || viewerRef.current || searchRef.current || pendingModeRef.current || agents.get().open !== undefined) return false;
+		if (shown.typing.length > 0 && shown.inputRows >= 1 && openTypingAt(shown, raw)) return true;
 		if (shown.waiting || shown.inputRows < 1) return false;
 		const below = shown.belowInput + (shown.vimNormal ? 1 : 0) + (shown.statusBar ? 1 : 0);
 		const row = shown.inputRows - 1 - (raw.height - 1 - below - raw.y);
@@ -1074,7 +1101,10 @@ export function ChatView(props: ChatViewProps) {
 	}, [resetsAt, clock, render]);
 	const pin = props.pin?.current();
 	const sessionId8 = t.sessionId ? scrub(t.sessionId).slice(0, 8) : undefined;
-	const barTitle = scrub(controller.title ?? NEW_CHAT_TITLE);
+	const barTitle = scrub(controller.title ?? newTitleOf(noun));
+	const barTasks = (controller.tasks ?? []).filter(
+		task => !(t.profile && ((task.subagentType !== undefined && t.profile.names.has(task.subagentType)) || (task.toolUseId !== undefined && isProfileId(t.profile, task.toolUseId)) || (task.id !== undefined && isProfileId(t.profile, task.id)))),
+	);
 	const statusBar = (
 		<ChatStatusBar
 			phase={t.phase}
@@ -1090,14 +1120,14 @@ export function ChatView(props: ChatViewProps) {
 			{...(t.account !== undefined && {account: t.account})}
 			{...(pin !== undefined && {pin})}
 			{...(limit !== undefined && {limit})}
-			tasks={controller.tasks ?? []}
+			tasks={barTasks}
 			panelShown={header.panel.height > 0}
 			{...(props.projectDir !== undefined && {project: basename(props.projectDir)})}
 			{...(branchRef.current !== undefined && {branch: branchRef.current})}
 			scrub={scrub}
 		/>
 	);
-	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, panelHeight: header.height};
+	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, panelHeight: header.height, topRules: 0, typing: [] as TypingCell[]};
 	const headerSlot = headerHost(host) !== undefined;
 	const fallbackPanel = headerSlot ? null : <ChatHeader plan={planStore} agents={agents} {...(host !== undefined && {host})} scrub={scrub} rows={rows} />;
 
@@ -1118,6 +1148,7 @@ export function ChatView(props: ChatViewProps) {
 						total={total}
 						approvals={t.approvals}
 						notice={t.notice}
+						noun={noun}
 					/>
 				) : (
 					<QuestionPrompt
@@ -1182,14 +1213,15 @@ export function ChatView(props: ChatViewProps) {
 		);
 	}
 
-	const tools = [...t.tools.values()];
+	const tools = [...t.tools.values()].filter(tool => !t.profile || !isProfileId(t.profile, tool.id));
+	const typing = props.profile && t.profile ? typingRow(pendingPersonas(t.profile), props.profile, columns, scrub) : undefined;
 	const running = t.phase !== 'idle';
 	const pendingMode = pendingModeRef.current?.mode;
 	const noticeText =
 		pendingMode === 'auto'
-			? 'Let a model classifier approve or deny tool calls (Bash and edits included) for this chat? It asks you only when unsure. Enter to confirm, any other key cancels.'
+			? `Let a model classifier approve or deny tool calls (Bash and edits included) for this ${noun}? It asks you only when unsure. Enter to confirm, any other key cancels.`
 			: pendingMode
-				? `Auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this chat? Enter to confirm, any other key cancels.`
+				? `Auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this ${noun}? Enter to confirm, any other key cancels.`
 				: t.notice;
 	const hint = modeHint(t.mode);
 	const rule = '─'.repeat(Math.max(1, columns - 1));
@@ -1210,6 +1242,7 @@ export function ChatView(props: ChatViewProps) {
 		tools: toolLayout(toolCount, LIVE.maxTools + 1).rows,
 		tail: wantedTail,
 		hint: hint !== '',
+		typing: typing ? 1 : 0,
 	});
 	const inputRows = live.input;
 	const noticeRows = live.notice;
@@ -1222,7 +1255,7 @@ export function ChatView(props: ChatViewProps) {
 	const queued = queuedLines(queueRef.current, scrub, live.queued);
 	const toolRows = toolLayout(toolCount, live.tools).rows;
 	const tail = liveTail(t.liveRaw, scrub, live.tail, columns);
-	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows};
+	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
 
 	return (
 		<Box flexDirection="column">
@@ -1259,6 +1292,7 @@ export function ChatView(props: ChatViewProps) {
 						</Text>
 					);
 				})}
+			{live.typing > 0 && typing && <Text wrap="truncate">{typing.text}</Text>}
 			{ruleRows > 0 && <Text dimColor>{rule}</Text>}
 			{searchRef.current ? (
 				<Text wrap="truncate">

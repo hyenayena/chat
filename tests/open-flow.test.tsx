@@ -4,7 +4,7 @@ import React from 'react';
 void React;
 import {setActivityEvents} from '../src/activity.js';
 import {loadUiChecked, NEEDS_MOUNT_MESSAGE, runChatView, UI_MISSING_MESSAGE} from '../src/open-flow.js';
-import {makeScrub} from '../src/public.js';
+import {checkProfile, makeScrub} from '../src/public.js';
 import {makeFakeLog} from './helpers/fake-log.js';
 import {makeCtx} from './helpers/fake-ctx.js';
 import {makeProvider} from './helpers/fake-provider.js';
@@ -82,6 +82,44 @@ test('a fork replays the history of the source but does not claim its session id
 	const r = await flow({history: async () => [{role: 'user', text: 'q'}]}, {fresh: false, resume: 'src', fork: true});
 	assert.equal(r.fu.chats[0]!.initialSessionId, undefined);
 	assert.match(r.ctx.lines.join('\n'), /Resumed — earlier messages above\./);
+	r.ctx.closeAll();
+	await r.done;
+});
+
+const clanProfile = {id: 'clan', owner: 'clan', banner: 'The clan is here', appendSystemPrompt: 'p', mainTools: [], agents: {}};
+
+test('a profile chat hands the profile to the view and prints its banner once after the chat banner', async () => {
+	const plain = await flow();
+	const plainLines = plain.ctx.lines.length;
+	plain.ctx.closeAll();
+	await plain.done;
+	const r = await flow({}, {profile: clanProfile as never});
+	assert.equal(r.fu.chats[0]!.profile?.id, 'clan');
+	assert.equal(r.ctx.lines.length, plainLines + 1);
+	assert.match(r.ctx.lines.at(-1)!, /The clan is here/);
+	assert.equal(r.ctx.lines.filter(l => l.includes('The clan is here')).length, 1);
+	r.ctx.closeAll();
+	await r.done;
+});
+
+test('a profile without a banner prints nothing extra, and a plain chat has no profile prop', async () => {
+	const plain = await flow();
+	const plainLines = plain.ctx.lines.length;
+	assert.equal(plain.fu.chats[0]!.profile, undefined);
+	plain.ctx.closeAll();
+	await plain.done;
+	const {banner: _banner, ...noBanner} = clanProfile;
+	const r = await flow({}, {profile: noBanner as never});
+	assert.equal(r.ctx.lines.length, plainLines);
+	r.ctx.closeAll();
+	await r.done;
+});
+
+test('a profile banner goes through the scrub and loses control bytes', async () => {
+	const r = await flow({opened: {scrub: makeScrub(s => s.replace('hunter2', '***'))}}, {profile: {...clanProfile, banner: 'hi hunter2\u001b[31m'} as never});
+	const text = r.ctx.lines.at(-1)!;
+	assert.ok(!text.includes('hunter2'));
+	assert.ok(!text.includes('\u001b[31m'));
 	r.ctx.closeAll();
 	await r.done;
 });
@@ -227,4 +265,102 @@ test('the user chat reports activity as chat:user and releases it when the view 
 	} finally {
 		setActivityEvents(undefined);
 	}
+});
+
+const nounProfile = () =>
+	checkProfile({id: 'clan', owner: 'clan', noun: 'clan', appendSystemPrompt: 'M.', mainTools: ['Agent'], agents: {a: {description: 'd', prompt: 'p', label: 'A', tone: 'teal'}}});
+
+test('a profile with a noun names itself in the activity label and the closing line', async () => {
+	const sent: Array<{label: string}> = [];
+	setActivityEvents({emit: (_t, p) => void sent.push(p as (typeof sent)[number]), on: () => () => {}});
+	try {
+		const r = await flow({session: {sessionId: 'abcdef0123456789'} as never}, {profile: nounProfile()});
+		r.ctx.closeAll();
+		await r.done;
+		assert.ok(sent.length > 0 && sent.every(x => x.label === 'clan'));
+		assert.match(r.ctx.lines.at(-1)!, /^\[clan closed · session abcdef01/);
+	} finally {
+		setActivityEvents(undefined);
+	}
+});
+
+function fakeStore(saved: Array<{n: number; at: number; agent: string; text: string}> = []) {
+	const calls: unknown[][] = [];
+	const store = {
+		bind: async (...a: unknown[]) => void calls.push(['bind', ...a]),
+		touch: async (...a: unknown[]) => void calls.push(['touch', ...a]),
+		addLine: async (...a: unknown[]) => void calls.push(['addLine', ...a]),
+		lines: async () => saved,
+		lookup: async () => undefined,
+		has: async () => false,
+		ids: async () => new Set<string>(),
+		listFor: async () => [],
+	};
+	return {store: store as never, calls};
+}
+
+const skeptic = {skeptic: {description: 'd', prompt: 'p', label: 'Skeptic', tone: 'orange'}};
+
+test('a profile chat binds the session once on the session event, touches it on every send and records the finished lines', async () => {
+	const {store, calls} = fakeStore();
+	const f = makeProvider({history: async () => [{role: 'user', text: 'a'}, {role: 'assistant', text: 'b'}, {role: 'user', text: 'c'}]});
+	const fu = makeUi();
+	const ctx = makeCtx();
+	const profile = checkProfile({id: 'clan', owner: 'clan', noun: 'clan', args: ['skeptic'], appendSystemPrompt: 'p', mainTools: [], agents: skeptic});
+	const done = runChatView(f.provider, {origin: 'user', fresh: false, resume: 'sess-1', profile}, ctx, {loadUi: async () => fu.ui, registerAbort: () => () => {}, profiles: store});
+	await tick();
+	const session = f.sessions[0]!;
+	session.emit({type: 'ui', event: {kind: 'session', sessionId: 'sess-1'}});
+	session.emit({type: 'ui', event: {kind: 'session', sessionId: 'sess-1'}});
+	session.emit({type: 'sent', text: 'hi'});
+	fu.chats[0]!.onProfileLine!({agent: 'skeptic', text: 'Hm.'});
+	await tick();
+	assert.deepEqual(calls, [
+		['bind', 'sess-1', {id: 'clan', owner: 'clan', noun: 'clan', args: ['skeptic']}],
+		['touch', 'aaaaaaaa-1111'],
+		['addLine', 'aaaaaaaa-1111', {n: 3, agent: 'skeptic', text: 'Hm.'}],
+	]);
+	ctx.closeAll();
+	await done;
+});
+
+test('a plain chat records nothing', async () => {
+	const {store, calls} = fakeStore();
+	const f = makeProvider();
+	const fu = makeUi();
+	const ctx = makeCtx();
+	const done = runChatView(f.provider, {origin: 'user', fresh: true}, ctx, {loadUi: async () => fu.ui, registerAbort: () => () => {}, profiles: store});
+	await tick();
+	f.sessions[0]!.emit({type: 'ui', event: {kind: 'session', sessionId: 's'}});
+	f.sessions[0]!.emit({type: 'sent', text: 'hi'});
+	assert.equal(fu.chats[0]!.onProfileLine, undefined);
+	assert.deepEqual(calls, []);
+	ctx.closeAll();
+	await done;
+});
+
+test('a resumed profile chat puts the saved persona lines back after the user message they followed', async () => {
+	const {store} = fakeStore([
+		{n: 1, at: 1, agent: 'skeptic', text: 'FIRST-LINE'},
+		{n: 2, at: 2, agent: 'skeptic', text: 'SECOND-LINE'},
+	]);
+	const f = makeProvider({
+		history: async () => [
+			{role: 'user', text: 'U-ONE'},
+			{role: 'assistant', text: 'A-ONE'},
+			{role: 'user', text: 'U-TWO'},
+			{role: 'assistant', text: 'A-TWO'},
+		],
+	});
+	const fu = makeUi();
+	const ctx = makeCtx();
+	const profile = checkProfile({id: 'clan', owner: 'clan', appendSystemPrompt: 'p', mainTools: [], agents: skeptic});
+	const done = runChatView(f.provider, {origin: 'user', fresh: false, resume: 'sess-1', profile}, ctx, {loadUi: async () => fu.ui, registerAbort: () => () => {}, profiles: store});
+	await tick();
+	const at = (needle: string) => ctx.lines.findIndex(l => l.includes(needle));
+	assert.ok(at('U-ONE') < at('FIRST-LINE') && at('FIRST-LINE') < at('A-ONE'));
+	assert.ok(at('A-ONE') < at('U-TWO') && at('U-TWO') < at('SECOND-LINE') && at('SECOND-LINE') < at('A-TWO'));
+	assert.equal(ctx.lines.some(l => l.includes('Earlier agent lines')), false);
+	ctx.closeAll();
+	await done;
 });
