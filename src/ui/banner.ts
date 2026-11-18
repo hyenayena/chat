@@ -105,7 +105,7 @@ export function formatBanner(info: BannerInfo, scrub: Scrub): string {
 	if (inner < PLAIN_LOGO.length) return '';
 	const logo = LOGOS.find(l => blockWidth(l) <= inner)!;
 	const logoWidth = blockWidth(logo);
-	const logoStyle = logo.length === 1 ? sg.bold + sg.warn : sg.warn;
+	const logoStyle = logo.length === 1 ? sg.bold + sg.running : sg.running;
 
 	const rightWidth = inner - logoWidth - INFO_GAP.length;
 	const side = rightWidth > 0 ? infoLines(info, scrub, rightWidth, sg) : {rows: [], complete: false};

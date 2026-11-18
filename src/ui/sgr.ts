@@ -7,6 +7,7 @@ const build = (t: Table) =>
 		error: t.error,
 		ok: t.ok,
 		warn: t.warn,
+		running: t.running,
 		accent: t.accent,
 		muted: t.muted,
 		added: t.added,

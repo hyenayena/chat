@@ -25,7 +25,7 @@ export const PROFILE_TONES = {
 	teal: 'accent',
 	green: 'ok',
 	yellow: 'warn',
-	orange: 'running',
+	orange: 'orange',
 	blue: 'heading',
 	violet: 'code.keyword',
 } as const;
