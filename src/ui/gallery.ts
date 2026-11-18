@@ -154,6 +154,7 @@ export const statusGallerySection: GallerySection = {
 		const base = {
 			phase: 'idle' as const,
 			status: null,
+			mode: 'acceptEdits' as const,
 			awaiting: false,
 			elapsedMs: 0,
 			quietMs: 0,
@@ -293,7 +294,6 @@ export const layoutGallerySection: GallerySection = {
 				queued: 0,
 				tools: tools.length,
 				tail: streamed.length,
-				hint: true,
 			});
 			const cut = (row: string): string => (styledCells(row) > width - 1 ? sliceStyledCells(row, 0, Math.max(0, width - 1)) : row);
 			const rule = (ascii ? '-' : '─').repeat(Math.max(1, width - 1));
@@ -305,8 +305,7 @@ export const layoutGallerySection: GallerySection = {
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
 				paintTone('> ', 'muted', depth),
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
-				...(live.hint > 0 ? [paintTone(`  ${present.modeHint('acceptEdits')}`, 'muted', depth)] : []),
-				bar.chatStatusRow({...status, panelShown: head.panel.height > 0}, width - 1, {frame: spinnerFrame(0, {ascii}), depth, ascii}),
+				bar.chatStatusRow({...status, mode: 'acceptEdits', panelShown: head.panel.height > 0}, width - 1, {frame: spinnerFrame(0, {ascii}), depth, ascii}),
 			];
 			const filler = Array.from({length: Math.max(0, rows - frame.length)}, () => paintTone('· transcript ·', 'muted', depth));
 			return [...filler, ...frame].map(cut);

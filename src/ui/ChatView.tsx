@@ -31,7 +31,6 @@ import {
 	formatOut,
 	formatUserLine,
 	liveTail,
-	modeHint,
 	routeBarText,
 	queuedLines,
 	typingRow,
@@ -140,7 +139,6 @@ export function viewerRowsOf(v: Viewer, columns: number): string[] {
 
 const MODE_NAME: Record<ChatMode, string> = {default: 'default', acceptEdits: 'accept-edits', plan: 'plan', auto: 'auto'};
 
-const MODE_COLOR: Record<ChatMode, string | undefined> = {default: undefined, acceptEdits: 'magenta', plan: 'cyan', auto: 'yellow'};
 
 export function ChatView(props: ChatViewProps) {
 	const {controller, print: printRaw, close, scrub} = props;
@@ -1164,6 +1162,7 @@ export function ChatView(props: ChatViewProps) {
 		<ChatStatusBar
 			phase={t.phase}
 			status={t.status}
+			mode={t.mode}
 			pending={controller.pendingPermissions.length}
 			since={sinceRef.current}
 			beat={beatRef.current}
@@ -1278,7 +1277,6 @@ export function ChatView(props: ChatViewProps) {
 			: pendingMode
 				? `Auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this ${noun}? Enter to confirm, any other key cancels.`
 				: t.notice;
-	const hint = modeHint(t.mode);
 	const rule = '─'.repeat(Math.max(1, columns - 1));
 	const noticeNeeded = noticeText ? Math.ceil(noticeText.length / Math.max(1, columns)) : 0;
 	const mention = activeMention();
@@ -1299,7 +1297,6 @@ export function ChatView(props: ChatViewProps) {
 		queued: Math.min(3, queueRef.current.length),
 		tools: toolLayout(toolCount, LIVE.maxTools + 1).rows,
 		tail: wantedTail,
-		hint: hint !== '',
 		typing: typing ? 1 : 0,
 	});
 	const inputRows = live.input;
@@ -1307,14 +1304,13 @@ export function ChatView(props: ChatViewProps) {
 	const mentionRows = mention ? live.menu : 0;
 	const commandRows = command ? live.menu : 0;
 	const ruleRows = live.rules;
-	const hintRows = live.hint;
 	const commandLabel = (name: string) => `/${[...(command?.path ?? []), name].join(' ')}`;
 	const nameWidth = command ? Math.max(...command.matches.map(c => commandLabel(c.name).length)) + 1 : 0;
 	const queued = queuedLines(queueRef.current, scrub, live.queued);
 	const toolRows = toolLayout(toolCount, live.tools).rows;
 	const tail = live.tail > 0 ? rawTail.slice(-live.tail) : [];
 	while (tail.length < live.tail) tail.push('');
-	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
+	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
 
 	return (
 		<Box flexDirection="column">
@@ -1363,11 +1359,6 @@ export function ChatView(props: ChatViewProps) {
 			)}
 			{ruleRows > 0 && <Text dimColor>{rule}</Text>}
 			{live.vim > 0 && <Text dimColor>-- NORMAL --</Text>}
-			{hintRows > 0 && (
-				<Text wrap="truncate" color={MODE_COLOR[t.mode]}>
-					{`  ${hint}`}
-				</Text>
-			)}
 			{statusBar}
 		</Box>
 	);

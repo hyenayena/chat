@@ -27,11 +27,10 @@ const needs = (patch: Partial<LiveNeeds> = {}): LiveNeeds => ({
 	queued: 2,
 	tools: 3,
 	tail: 8,
-	hint: true,
 	...patch,
 });
 
-const frameOf = (h: LiveHeights, status = 1): number => h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.hint + status;
+const frameOf = (h: LiveHeights, status = 1): number => h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + status;
 
 test('header plus live area stay within the fixed budget and the frame within the live cap', () => {
 	for (const columns of COLUMNS) {
@@ -60,7 +59,7 @@ test('below 12 rows only the status bar, the input and what is bound to the inpu
 		const header = headerLayout(plan(), agents(3), {rows, columns: 100, scrub});
 		assert.equal(header.height, 0, `rows ${rows}`);
 		const live = liveLayout(needs({rows, notice: 2, menu: 3, vim: true}));
-		assert.equal(live.queued + live.tools + live.tail + live.rules + live.hint, 0, `rows ${rows}`);
+		assert.equal(live.queued + live.tools + live.tail + live.rules, 0, `rows ${rows}`);
 		assert.equal(live.input, 1, `rows ${rows}`);
 		assert.ok(live.notice >= 1 && live.menu >= 1 && live.vim === 1, `rows ${rows}: ${JSON.stringify(live)}`);
 		assert.ok(frameOf(live) <= liveRowCap(rows) || rows < 6, `rows ${rows}: ${frameOf(live)}`);
@@ -71,7 +70,6 @@ test('the live parts drop in the documented order as the room shrinks', () => {
 	const order: [string, (h: LiveHeights) => boolean][] = [
 		['tail', h => h.tail > 0],
 		['queued', h => h.queued > 0],
-		['hint', h => h.hint > 0],
 		['rules', h => h.rules > 0],
 		['tools', h => h.tools > 0],
 		['vim', h => h.vim > 0],
@@ -156,6 +154,6 @@ test('the typing row drops with the extra tool rows and never shows in the tiny 
 		const h = liveLayout(needs({rows, typing: 1, headerHeight: 0}));
 		assert.ok(h.typing <= 1);
 		if (h.typing === 1) assert.ok(h.tools >= 1, `${rows}`);
-		assert.ok(h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.hint + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
+		assert.ok(h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
 	}
 });

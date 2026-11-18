@@ -19,7 +19,7 @@ import {
 	liveTail,
 	statusLineText,
 	tasksBarText,
-	modeHint,
+	modeBadge,
 	verbFor,
 	pickWorkingVerb,
 	WORKING_VERBS,
@@ -147,15 +147,16 @@ test('assistant blocks start with a dot and hang under it', () => {
 	for (const line of strip(formatAssistantBlock('word '.repeat(40), scrub, false, 30)).split('\n')) assert.ok(line.length <= 30, line);
 });
 
-test('working verbs and the mode hint', () => {
+test('working verbs and the mode badge', () => {
 	assert.equal(pickWorkingVerb(() => 0), WORKING_VERBS[0]);
 	assert.equal(pickWorkingVerb(() => 0.9999), WORKING_VERBS[WORKING_VERBS.length - 1]);
 	assert.equal(pickWorkingVerb(() => 0, WORKING_VERBS[0]), WORKING_VERBS[1]);
 	assert.equal(verbFor('box-1', 3), verbFor('box-1', 3));
 	assert.ok((WORKING_VERBS as readonly string[]).includes(verbFor('box-1', 3)));
-	assert.equal(modeHint('default'), '');
-	assert.equal(modeHint('acceptEdits'), '⏵⏵ accept edits on (shift+tab to cycle)');
-	assert.equal(modeHint('plan'), '⏸ plan mode on (shift+tab to cycle)');
+	assert.equal(modeBadge('default'), '');
+	assert.equal(modeBadge('acceptEdits'), '⏵⏵ edits');
+	assert.equal(modeBadge('plan'), '⏸ plan');
+	assert.equal(modeBadge('auto'), '⏵⏵ auto');
 });
 
 test('status line texts', () => {

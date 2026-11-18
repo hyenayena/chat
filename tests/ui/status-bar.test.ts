@@ -36,9 +36,9 @@ test('idle, wide: every segment in the fixed order', () => {
 	assert.deepEqual(order, [...order].sort((a, b) => a - b));
 });
 
-test('running: spinner, verb, elapsed, tokens and the interrupt hint; shorter forms keep the activity', () => {
+test('running: spinner, verb, elapsed, tokens (no interrupt hint); shorter forms keep the activity', () => {
 	const input = {phase: 'running' as const, elapsedMs: 72_000, status: {kind: 'thinking' as const, tokens: 1200}};
-	assert.match(bar(input, 200), /^⣾ Sniffing… 1m 12s · ↓ 1\.2k · esc to interrupt · opus/);
+	assert.match(bar(input, 200), /^⣾ Sniffing… 1m 12s · ↓ 1\.2k · opus/);
 	assert.match(bar(input, 30), /^⣾ 1m 12s/);
 	assert.equal(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 14), '⣾ 1m 12s');
 	assert.match(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 30), /^⣾ Sniffing… 1m 12s/);
@@ -125,4 +125,13 @@ test('panelShown drops the running subagents from the agents segment and keeps b
 
 test('awaiting approval stays in the status bar while the agent panel is shown', () => {
 	assert.match(bar({panelShown: true, awaiting: true}, 200), /^awaiting approval/);
+});
+
+test('the permission mode is a short badge after the activity, never dropped; default shows none', () => {
+	assert.match(bar({mode: 'auto'}, 200), /^idle · ⏵⏵ auto/);
+	assert.match(bar({mode: 'plan'}, 200), /⏸ plan/);
+	assert.match(bar({mode: 'acceptEdits'}, 200), /⏵⏵ edits/);
+	assert.doesNotMatch(bar({mode: 'default'}, 200), /⏵|⏸/);
+	assert.match(bar({mode: 'auto'}, 20), /⏵⏵ auto/);
+	assert.doesNotMatch(bar({phase: 'running', status: {kind: 'thinking', tokens: 0}}, 200), /esc to interrupt|shift\+tab/);
 });

@@ -475,14 +475,9 @@ export function verbFor(seed: string, beat: number): string {
 	return WORKING_VERBS[h % WORKING_VERBS.length] ?? 'Working';
 }
 
-const MODE_HINT: Record<ChatMode, string> = {
-	default: '',
-	acceptEdits: '⏵⏵ accept edits on (shift+tab to cycle)',
-	plan: '⏸ plan mode on (shift+tab to cycle)',
-	auto: '⏵⏵ auto mode on (shift+tab to cycle)',
-};
+const MODE_BADGE: Record<ChatMode, string> = {default: '', acceptEdits: '⏵⏵ edits', plan: '⏸ plan', auto: '⏵⏵ auto'};
 
-export const modeHint = (mode: ChatMode): string => MODE_HINT[mode];
+export const modeBadge = (mode: ChatMode): string => MODE_BADGE[mode];
 
 export function tasksBarText(tasks: readonly {status: string; background: boolean; taskType?: string}[]): string {
 	const running = tasks.filter(t => t.status === 'running');

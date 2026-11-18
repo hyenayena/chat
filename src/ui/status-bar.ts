@@ -1,6 +1,6 @@
-import type {ContextInfo} from '../public.js';
+import type {ChatMode, ContextInfo} from '../public.js';
 import {colorDepth, formatElapsed, glyph, meterBar, paintTone, sanitizeText, segmentBar, truncateCells, type BarSegment, type ColorDepth, type ThemeTone} from '../kit.js';
-import {QUIET_NOTICE_S, routeBarText, statusLineText, tasksBarText} from './present.js';
+import {QUIET_NOTICE_S, modeBadge, routeBarText, statusLineText, tasksBarText} from './present.js';
 import type {Phase, StatusLine} from './transcript.js';
 import {formatTokens} from './turn-summary.js';
 
@@ -15,6 +15,7 @@ type Tasks = Parameters<typeof tasksBarText>[0];
 export type StatusInput = {
 	phase: Phase;
 	status: StatusLine;
+	mode?: ChatMode;
 	awaiting: boolean;
 	elapsedMs: number;
 	quietMs: number;
@@ -77,11 +78,18 @@ export function activitySegment(input: StatusInput, o: StatusOptions): BarSegmen
 	const extra = (...parts: (string | undefined)[]): string => parts.filter((p): p is string => p !== undefined).map(p => ` ${paint('·', 'muted')} ${p}`).join('');
 	const tokenPart = tokens !== undefined && tokens > 0 ? paint(`↓ ${formatTokens(tokens)}`, 'muted') : undefined;
 	const forms = [
-		`${head}${extra(tokenPart, quiet, paint('esc to interrupt', 'muted'))}`,
+		`${head}${extra(tokenPart, quiet)}`,
 		`${head}${extra(quiet)}`,
 		paint(`${o.frame} ${elapsed}`, 'running'),
 	];
 	return {forms: forms.filter((f, i) => forms.indexOf(f) === i), keep};
+}
+
+const MODE_TONE: Record<ChatMode, ThemeTone> = {default: 'muted', acceptEdits: 'code.keyword', plan: 'accent', auto: 'running'};
+
+function modeSegment(input: StatusInput, depth: ColorDepth): BarSegment | undefined {
+	const badge = input.mode === undefined ? '' : modeBadge(input.mode);
+	return badge === '' ? undefined : {forms: [paintTone(badge, MODE_TONE[input.mode!], depth)], keep: true};
 }
 
 function modelSegment(input: StatusInput): BarSegment | undefined {
@@ -132,6 +140,7 @@ export function chatStatusRow(input: StatusInput, width: number, o: StatusOption
 	const opts = {...o, depth};
 	const segments = [
 		activitySegment(input, opts),
+		modeSegment(input, depth),
 		modelSegment(input),
 		contextSegment(input.context, opts),
 		accountSegment(input, depth),

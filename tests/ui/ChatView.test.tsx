@@ -262,7 +262,7 @@ test('live region respects small terminal heights', async () => {
 		await t.settle(60);
 		const height = t.lastFrame().split('\n').length;
 		assert.ok(height < (rows >= 12 ? rows - 2 : rows), `rows=${rows} height=${height}`);
-		assert.match(bar(t), /esc to interrupt/);
+		assert.match(bar(t), /[⣾⣽⣻⢿⡿⣟⣯⣷|/\\-] [\w -]+…/);
 	}
 });
 
@@ -532,12 +532,12 @@ test('Shift+Tab asks for confirmation before accept-edits; Enter applies it', as
 	t.press(ENTER);
 	await t.settle();
 	assert.deepEqual(t.controller.calls.modes, ['acceptEdits']);
-	assert.match(t.lastFrame(), /accept edits on/);
+	assert.match(t.lastFrame(), /⏵⏵ edits/);
 	assert.ok(t.printed.some(p => p.includes('auto-accept edits (this chat only)')));
 	t.press(SHIFT_TAB);
 	await t.settle();
 	assert.deepEqual(t.controller.calls.modes, ['acceptEdits', 'plan'], 'plan needs no confirmation');
-	assert.match(t.lastFrame(), /plan mode on/);
+	assert.match(t.lastFrame(), /⏸ plan/);
 	t.press(SHIFT_TAB);
 	await t.settle(ARM + 50);
 	assert.match(t.lastFrame().replace(/\s+/g, ' '), /Let a model classifier approve or deny tool calls/);
@@ -545,12 +545,12 @@ test('Shift+Tab asks for confirmation before accept-edits; Enter applies it', as
 	t.press(ENTER);
 	await t.settle();
 	assert.deepEqual(t.controller.calls.modes, ['acceptEdits', 'plan', 'auto']);
-	assert.match(t.lastFrame(), /auto mode on/);
+	assert.match(t.lastFrame(), /⏵⏵ auto/);
 	assert.ok(t.printed.some(p => p.includes('Mode: auto (a classifier approves')));
 	t.press(SHIFT_TAB);
 	await t.settle();
 	assert.deepEqual(t.controller.calls.modes, ['acceptEdits', 'plan', 'auto', 'default']);
-	assert.doesNotMatch(t.lastFrame(), /mode on|mode:/);
+	assert.doesNotMatch(t.lastFrame(), /[⏵⏸]|mode:/);
 });
 
 test('any other key cancels the accept-edits confirmation and Enter before arming does not apply it', async () => {
@@ -1137,12 +1137,12 @@ test('mouse: a host without subscribeMouse changes nothing', async () => {
 	assert.deepEqual(t.controller.calls.sent, ['abc']);
 });
 
-test('thinking status shows the animated spinner, one hyena verb for the turn, seconds and the interrupt hint', async () => {
+test('thinking status shows the animated spinner, one hyena verb for the turn, seconds, no interrupt hint', async () => {
 	const t = setup();
 	await t.settle();
 	t.controller.ui({kind: 'thinking'});
 	await t.settle();
-	const line = /([⣾⣽⣻⢿⡿⣟⣯⣷|/\\-]) ([\w -]+)… [\dms. ]+ · esc to interrupt/;
+	const line = /([⣾⣽⣻⢿⡿⣟⣯⣷|/\\-]) ([\w -]+)… [\dms. ]+/;
 	const first = bar(t).match(line);
 	assert.ok(first, 'spinner frame before the status text');
 	assert.ok((WORKING_VERBS as readonly string[]).includes(first[2]), first[2]);
@@ -1316,14 +1316,15 @@ test('blocks are separated by one empty line; a notice line belongs to the block
 	assert.deepEqual(shape, ['gap', ' > hi ', 'gap', '● hello', 'gap', 'Allowed Bash', '✓ $ ls']);
 });
 
-test('the input sits between two rules, with the mode hint under it', async () => {
+test('the input sits between two rules; the mode shows in the status bar', async () => {
 	const t = setup({columns: 40, rows: 20});
 	await t.settle();
 	const rule = '─'.repeat(39);
 	assert.match(t.lastFrame(), new RegExp(`${rule}\\n> ?\\n${rule}`));
 	t.controller.setMode('plan');
 	await t.settle();
-	assert.match(t.lastFrame(), /⏸ plan mode on \(shift\+tab to cycle\)/);
+	assert.match(t.lastFrame(), new RegExp(`${rule}\\n[^\\n]*⏸ plan`));
+	assert.doesNotMatch(t.lastFrame(), /shift\+tab/);
 });
 
 function commandFakeHost() {
@@ -1646,7 +1647,7 @@ test('a busy live frame stays below rows and within columns - 1 at 10, 24 and 40
 			const lines = plainFrame(t).replace(/\n+$/, '').split('\n');
 			assert.ok(lines.length <= rows - 1, `${columns}x${rows}: ${lines.length} rows`);
 			for (const line of lines) assert.ok([...line].length <= columns - 1, `${columns}x${rows}: ${JSON.stringify(line)}`);
-			assert.match(lines.at(-1)!, /esc to interrupt|Whooping|\d+s/, `${columns}x${rows}: the status bar is the last row`);
+			assert.match(lines.at(-1)!, /…|Whooping|\d+s/, `${columns}x${rows}: the status bar is the last row`);
 		}
 	}
 });

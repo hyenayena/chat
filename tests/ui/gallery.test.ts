@@ -96,7 +96,7 @@ test('the status section renders within the width at every depth and is register
 		}
 	}
 	const text = withColorDepth('none', () => render({width: 159, rows: 24, depth: 'none', ascii: false})).map(stripStyles).join('\n');
-	for (const part of ['idle', 'awaiting approval', 'esc to interrupt', 'interrupted', '3 files changed']) assert.ok(text.includes(part), part);
+	for (const part of ['idle', 'awaiting approval', '⏵⏵ edits', 'interrupted', '3 files changed']) assert.ok(text.includes(part), part);
 	assert.equal(registerGallerySection(statusGallerySection), true);
 });
 
