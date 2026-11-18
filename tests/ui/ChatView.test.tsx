@@ -1215,6 +1215,32 @@ test('the indicator disappears by itself when the reset time passes', async () =
 	assert.doesNotMatch(bar(t), /limit/);
 });
 
+test('a rejected limit prints one notice per window and one reset notice when the time passes', async () => {
+	const clock = {now: () => Date.now(), timeZone: 'UTC'};
+	const t = setup(undefined, {clock});
+	await t.settle();
+	const resetsAt = Date.now() / 1000 + 1;
+	const info = {status: 'rejected' as const, type: 'five_hour' as const, resetsAt};
+	t.controller.ui({kind: 'rate-limit', info});
+	t.controller.ui({kind: 'rate-limit', info});
+	await t.settle();
+	assert.equal(t.printed.filter(p => /Usage limit reached \(5h limit\)/.test(p)).length, 1);
+	assert.equal(t.printed.filter(p => /Usage limit reset/.test(p)).length, 0);
+	await t.until(() => t.printed.some(p => /Usage limit reset; you can continue/.test(p)), 3000);
+	assert.equal(t.printed.filter(p => /Usage limit reset/.test(p)).length, 1);
+	assert.deepEqual(t.controller.calls.sent, []);
+});
+
+test('a new window before the reset cancels the reset notice', async () => {
+	const clock = {now: () => Date.now(), timeZone: 'UTC'};
+	const t = setup(undefined, {clock});
+	await t.settle();
+	t.controller.ui({kind: 'rate-limit', info: {status: 'rejected', type: 'five_hour', resetsAt: Date.now() / 1000 + 0.5}});
+	t.controller.ui({kind: 'rate-limit', info: {status: 'allowed', type: 'five_hour', resetsAt: Date.now() / 1000 + 18000}});
+	await new Promise(r => setTimeout(r, 900));
+	assert.equal(t.printed.filter(p => /Usage limit reset/.test(p)).length, 0);
+});
+
 test('after a limit the queued text goes back to the draft and nothing is sent', async () => {
 	const t = setup();
 	t.controller.setState('running');

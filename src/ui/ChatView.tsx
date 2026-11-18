@@ -4,7 +4,7 @@ import {Box, Text, useInput, usePaste, type Key} from 'ink';
 import type {PrintOptions, ViewHost} from '../../../../src/api.js';
 import type {ChatController, ChatEvent, ChatProfile} from '../public.js';
 import {nounOf} from '../public.js';
-import {limitIndicator, systemClock, type Clock} from '../public.js';
+import {LIMIT_RESET_TEXT, limitIndicator, limitNoticeText, systemClock, type Clock, type RateLimitInfo} from '../public.js';
 import {MODE_CYCLE} from '../public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest} from '../public.js';
 import {sanitizeMultilineInput, truncateCells, wrapRows} from '../kit.js';
@@ -26,6 +26,7 @@ import {PermissionPrompt} from './PermissionPrompt.js';
 import {
 	formatError,
 	formatNotice,
+	formatWarning,
 	assistantPrint,
 	formatOut,
 	formatUserLine,
@@ -235,20 +236,44 @@ export function ChatView(props: ChatViewProps) {
 	const [, setTick] = useState(0);
 	const render = useCallback(() => setTick(n => n + 1), []);
 	const lastWidthRef = useRef(0);
+	const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	const lastFrameRef = useRef(0);
+	const tailPeakRef = useRef(0);
 	if (columns > 0) lastWidthRef.current = columns;
 
 	const setT = useCallback(
 		(next: TranscriptState) => {
+			const prevRaw = tRef.current.liveRaw;
 			tRef.current = next;
 			const cur = planStore.get();
 			const running = next.phase !== 'idle';
 			if (cur.items !== next.plan || cur.running !== running || cur.stale !== next.planStale) {
 				planStore.set({...cur, items: next.plan, running, stale: next.planStale, ...(next.plan.length === 0 && {expanded: false})});
 			}
-			render();
+			const streaming = next.liveRaw !== prevRaw && next.liveRaw !== '' && prevRaw !== '';
+			if (!streaming) {
+				if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current);
+				deltaTimerRef.current = undefined;
+				lastFrameRef.current = Date.now();
+				render();
+				return;
+			}
+			const wait = LIVE.frameMs - (Date.now() - lastFrameRef.current);
+			if (wait <= 0) {
+				lastFrameRef.current = Date.now();
+				render();
+			} else if (!deltaTimerRef.current) {
+				deltaTimerRef.current = setTimeout(() => {
+					deltaTimerRef.current = undefined;
+					lastFrameRef.current = Date.now();
+					render();
+				}, wait);
+				deltaTimerRef.current.unref?.();
+			}
 		},
 		[render, planStore],
 	);
+	useEffect(() => () => clearTimeout(deltaTimerRef.current), []);
 	const undoRef = useRef<EditorState[]>([]);
 	const edit = useCallback(
 		(...actions: EditorAction[]) => {
@@ -307,6 +332,31 @@ export function ChatView(props: ChatViewProps) {
 		[],
 	);
 
+	const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	const armLimitReset = useCallback(
+		(info: RateLimitInfo): void => {
+			if (resetTimer.current !== undefined) clearTimeout(resetTimer.current);
+			resetTimer.current = undefined;
+			if (info.status !== 'rejected' || info.resetsAt === undefined) return;
+			const wait = info.resetsAt * 1000 - clock.now();
+			if (wait <= 0) return;
+			resetTimer.current = setTimeout(() => {
+				resetTimer.current = undefined;
+				if (closedRef.current) return;
+				print(formatWarning(LIMIT_RESET_TEXT, scrub));
+				render();
+			}, Math.min(wait, MAX_TIMER_MS));
+			resetTimer.current.unref?.();
+		},
+		[clock, print, scrub, render],
+	);
+	useEffect(
+		() => () => {
+			if (resetTimer.current !== undefined) clearTimeout(resetTimer.current);
+		},
+		[],
+	);
+
 	const feed = useCallback(
 		(event: ChatEvent) => {
 			if (closedRef.current) return;
@@ -337,8 +387,13 @@ export function ChatView(props: ChatViewProps) {
 			if (tRef.current.phase === 'idle' && step.state.phase !== 'idle') sinceRef.current = Date.now();
 			setT(event.type === 'turn-end' ? {...step.state, notice: undefined} : step.state);
 			if (event.type === 'turn-end') refreshBranch();
+			if (event.type === 'ui' && event.event.kind === 'rate-limit') armLimitReset(event.event.info);
 			for (const out of step.out) {
 				if (out.kind === 'blank') continue;
+				if (out.kind === 'limit-notice') {
+					print(formatWarning(limitNoticeText(out.info, clock), scrub));
+					continue;
+				}
 				if (out.kind === 'turn-summary') {
 					print(formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile), {render: w => formatOut(out, scrub, reveal, w, props.profile)});
 					continue;
@@ -379,7 +434,7 @@ export function ChatView(props: ChatViewProps) {
 				}
 			}
 		},
-		[print, printNotice, scrub, reveal, setT, render, setQueue, agents, refreshBranch, reconcileNow],
+		[print, printNotice, scrub, reveal, setT, render, setQueue, agents, refreshBranch, reconcileNow, armLimitReset, clock],
 	);
 
 	const flushQueue = useCallback(() => {
@@ -1230,7 +1285,10 @@ export function ChatView(props: ChatViewProps) {
 	const command = mention ? undefined : activeCommand();
 	const vimNormal = props.inputMode?.() === 'vim' && vimRef.current.mode === 'normal';
 	const toolCount = tools.length + (t.fold.length > 0 ? 1 : 0);
-	const wantedTail = liveTail(t.liveRaw, scrub, LIVE.maxTailRows, columns).length;
+	const rawTail = liveTail(t.liveRaw, scrub, LIVE.maxTailRows, columns);
+	if (t.liveRaw === '') tailPeakRef.current = 0;
+	else tailPeakRef.current = Math.max(tailPeakRef.current, Math.min(LIVE.maxTailRows, Math.ceil(rawTail.length / LIVE.tailRowStep) * LIVE.tailRowStep));
+	const wantedTail = tailPeakRef.current;
 	const live = liveLayout({
 		rows,
 		headerHeight: header.height,
@@ -1254,7 +1312,8 @@ export function ChatView(props: ChatViewProps) {
 	const nameWidth = command ? Math.max(...command.matches.map(c => commandLabel(c.name).length)) + 1 : 0;
 	const queued = queuedLines(queueRef.current, scrub, live.queued);
 	const toolRows = toolLayout(toolCount, live.tools).rows;
-	const tail = liveTail(t.liveRaw, scrub, live.tail, columns);
+	const tail = live.tail > 0 ? rawTail.slice(-live.tail) : [];
+	while (tail.length < live.tail) tail.push('');
 	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2 + hintRows, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
 
 	return (

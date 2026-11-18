@@ -79,3 +79,42 @@ export const limitIndicator = (info: RateLimitInfo | undefined, clock: Clock): s
 	}
 	return info.usingOverage ? `${label} reached, extra usage` : `${label} reached${resets}`;
 };
+
+const LIMIT_NOTICE_WARN_FROM = 0.9;
+
+export type LimitNoticeKind = 'rejected' | 'warning';
+
+// One notice per window and kind: the key is what the transcript remembers.
+export const limitNoticeKey = (info: RateLimitInfo): string | undefined => {
+	const kind = limitNoticeKindOf(info);
+	return kind === undefined ? undefined : `${kind}|${info.type ?? ''}|${info.resetsAt ?? ''}`;
+};
+
+export const limitNoticeKindOf = (info: RateLimitInfo): LimitNoticeKind | undefined => {
+	if (info.status === 'rejected') return 'rejected';
+	if (info.status === 'allowed_warning' && (info.utilization ?? 0) >= LIMIT_NOTICE_WARN_FROM) return 'warning';
+	return undefined;
+};
+
+export const limitNoticeText = (info: RateLimitInfo, clock: Clock): string => {
+	const label = info.type ? SHORT_LABELS[info.type] : 'usage limit';
+	const resets = info.resetsAt === undefined ? '' : ` · resets ${formatReset(info.resetsAt, clock)}`;
+	if (info.status === 'allowed_warning') {
+		const pct = info.utilization === undefined ? '' : ` ${Math.min(999, Math.max(0, Math.round(info.utilization * 100)))}%`;
+		return `Usage limit almost reached (${label}${pct})${resets}.`;
+	}
+	if (info.usingOverage) return `Usage limit reached (${label}); using extra usage.`;
+	return `Usage limit reached (${label})${resets}. Work in progress is saved; continue after the reset.`;
+};
+
+export const LIMIT_RESET_TEXT = 'Usage limit reset; you can continue.';
+
+const LIMIT_ERROR = /rate_limit|\bHTTP 429\b|\b(?:session|usage|weekly|5-hour|five-hour) limit\b/i;
+const LIMIT_RESETS = /\bresets\s+(\d{1,2}(?::\d{2})?\s?[ap]m(?:\s\([A-Za-z0-9_/+:-]{1,32}\))?)/i;
+
+// A failed task or agent whose error text is a usage-limit refusal gets this label instead of a plain failure.
+export const usageLimitLabel = (text: string | undefined): string | undefined => {
+	if (text === undefined || !LIMIT_ERROR.test(text)) return undefined;
+	const resets = LIMIT_RESETS.exec(text)?.[1];
+	return `stopped: usage limit${resets === undefined ? '' : `, resets ${resets}`}`;
+};

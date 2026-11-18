@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import {formatReset, limitIndicator, type Clock, type RateLimitInfo} from '../../src/public.js';
+import {formatReset, limitIndicator, limitNoticeText, usageLimitLabel, type Clock, type RateLimitInfo} from '../../src/public.js';
 
 const NOW = Date.UTC(2026, 9, 21, 12, 46, 0);
 const at = (iso: string): number => Date.parse(iso) / 1000;
@@ -70,3 +70,21 @@ describe('limitIndicator', () => {
 	});
 });
 
+
+describe('limit notices', () => {
+	it('text for a rejected limit and a warning', () => {
+		const resetsAt = at('2026-10-21T15:00:00Z');
+		assert.equal(
+			limitNoticeText({status: 'rejected', type: 'five_hour', resetsAt}, clock('UTC')),
+			'Usage limit reached (5h limit) · resets 15:00 UTC (in 2h 14m). Work in progress is saved; continue after the reset.',
+		);
+		assert.equal(limitNoticeText({status: 'allowed_warning', type: 'five_hour', utilization: 0.9, resetsAt}, clock('UTC')), 'Usage limit almost reached (5h limit 90%) · resets 15:00 UTC (in 2h 14m).');
+	});
+
+	it('usageLimitLabel finds the limit and its reset in an error text', () => {
+		assert.equal(usageLimitLabel("You've hit your session limit · resets 6:10pm (UTC) (error type rate_limit, HTTP 429)"), 'stopped: usage limit, resets 6:10pm (UTC)');
+		assert.equal(usageLimitLabel('API Error: 429 rate_limit_error'), 'stopped: usage limit');
+		assert.equal(usageLimitLabel('compile error'), undefined);
+		assert.equal(usageLimitLabel(undefined), undefined);
+	});
+});

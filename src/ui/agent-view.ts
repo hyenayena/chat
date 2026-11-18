@@ -1,6 +1,6 @@
 import {wrapLines} from '../kit.js';
 import type {AgentBox, AgentEntry} from './agents.js';
-import {formatNotice, formatOut, formatThinkingText, formatUserLine, sgr, type Scrub} from './present.js';
+import {formatNotice, formatOut, formatWarning, formatThinkingText, formatUserLine, sgr, type Scrub} from './present.js';
 import {formatToolGroup, runningToolRow} from './tool-card.js';
 import {isFoldable} from './tool-kind.js';
 import {glyph} from '../kit.js';
@@ -69,6 +69,7 @@ export function agentViewBlocks(box: AgentBox, scrub: Scrub, reveal: Scrub, widt
 	if (box.report !== undefined && box.report.trim() !== lastText(box)?.trim()) {
 		blocks.push(formatOut({kind: 'assistant', text: box.report, interrupted: false}, scrub, reveal, width));
 	}
+	if (box.limit !== undefined) blocks.push(formatWarning(`${box.name}: ${box.limit}`, scrub));
 	return blocks;
 }
 

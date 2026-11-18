@@ -1,6 +1,6 @@
-import {BLOCK_DISPLAY_CAP, clampChars} from '../public.js';
+import {BLOCK_DISPLAY_CAP, clampChars, limitNoticeText, systemClock} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
-import {SGR_ATTR, formatElapsed, glyph, paintTone, sliceCells, sliceStyledCells, stringCells, truncateCells} from '../kit.js';
+import {SGR_ATTR, formatElapsed, glyph, paintTone, sliceCells, sliceStyledCells, stringCells, styledCells, truncateCells} from '../kit.js';
 import {sgr} from './sgr.js';
 import type {PrintAction, PrintOptions} from '../../../../src/api.js';
 import type {RouteInfo} from '../public.js';
@@ -332,6 +332,8 @@ export function formatOut(out: Out, scrub: Scrub, reveal: Scrub = scrub, width?:
 			return formatThinking(out.text, scrub, out.durationMs);
 		case 'task':
 			return paint(sgr().muted, `⚙ Background task ${out.status}: ${scrub(out.description)}${out.summary ? ` — ${scrub(out.summary)}` : ''}`);
+		case 'limit-notice':
+			return formatWarning(limitNoticeText(out.info, systemClock), scrub);
 		case 'assistant':
 			return formatAssistantBlock(out.text, scrub, out.interrupted, width);
 		case 'tool':
@@ -381,7 +383,8 @@ function renderTail(liveRaw: string, scrub: Scrub, columns: number): string[] {
 	let window = liveRaw;
 	let cut = false;
 	if (window.length > LIVE.tailChars) {
-		const start = liveRaw.length - LIVE.tailChars;
+		// Quantized so the window start (and the rows that reflow with it) moves once per step, not per delta.
+		const start = Math.ceil((liveRaw.length - LIVE.tailChars) / LIVE.tailStepChars) * LIVE.tailStepChars;
 		const nl = liveRaw.indexOf('\n', start);
 		const from = nl >= 0 ? nl + 1 : start;
 		window = liveRaw.slice(from);
@@ -391,7 +394,8 @@ function renderTail(liveRaw: string, scrub: Scrub, columns: number): string[] {
 	}
 	const rows = assistantBlock(window, scrub, false, Math.max(1, columns - 1), false).text.split('\n');
 	if (cut && rows[0]?.startsWith('● ')) rows[0] = `${' '.repeat(BLOCK_INDENT)}${rows[0].slice(2)}`;
-	return rows;
+	const limit = Math.max(1, columns - 1);
+	return rows.map(row => (styledCells(row) > limit ? sliceStyledCells(row, 0, limit) : row));
 }
 
 export function statusLineText(status: StatusLine): string {

@@ -35,6 +35,8 @@ const BADGE: Record<Exclude<AgentBox['status'], 'running'>, BoxBadge> = {
 	stopped: {word: 'STOPPED', tone: 'warn'},
 };
 
+const LIMIT_BADGE: BoxBadge = {word: 'USAGE LIMIT', tone: 'warn'};
+
 const firstLine = (text: string): string => (text.split('\n').find(l => l.trim() !== '') ?? '').trim();
 
 const entryLine = (e: AgentEntry, scrub: Scrub): SpanRow | undefined => {
@@ -76,7 +78,7 @@ const renderBox = (state: AgentsState, box: AgentBox, width: number, height: num
 		...(box.model !== undefined && {meta: shortModel(box.model, look.scrub)}),
 		...(footer !== '' && {footer}),
 		body: running ? bodyOf(box, height, look) : [],
-		...(box.status !== 'running' && {tone: 'dim' as const, badge: BADGE[box.status]}),
+		...(box.status !== 'running' && {tone: 'dim' as const, badge: box.limit !== undefined ? LIMIT_BADGE : BADGE[box.status]}),
 		...(highlight !== undefined && {highlight}),
 	});
 };

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import type {ChatEvent, UiEvent} from '../../src/public.js';
+import type {ChatEvent, RateLimitInfo, UiEvent} from '../../src/public.js';
 import type {ToolRequest} from '../../src/public.js';
 import {initialTranscript, reduceTranscript, resetTranscript, type Out, type TranscriptState} from '../../src/ui/transcript.js';
 
@@ -376,4 +376,34 @@ test('a finished plan is dropped when the next turn starts; reset clears the pla
 	assert.equal(open.state.plan.length, 1);
 	assert.deepEqual(resetTranscript(open.state).plan, []);
 	assert.equal(initialTranscript({plan: open.state.plan}).plan.length, 1);
+});
+
+test('rate-limit gives one notice per window: rejected once, warning from 90% once, allowed none', () => {
+	const rl = (info: RateLimitInfo): ChatEvent => ({type: 'ui', event: {kind: 'rate-limit', info}});
+	let state = initialTranscript();
+	const outs: string[] = [];
+	for (const info of [
+		{status: 'allowed', type: 'five_hour', resetsAt: 100},
+		{status: 'allowed_warning', type: 'five_hour', utilization: 0.8, resetsAt: 100},
+		{status: 'allowed_warning', type: 'five_hour', utilization: 0.9, resetsAt: 100},
+		{status: 'allowed_warning', type: 'five_hour', utilization: 0.95, resetsAt: 100},
+		{status: 'rejected', type: 'five_hour', resetsAt: 100},
+		{status: 'rejected', type: 'five_hour', resetsAt: 100},
+		{status: 'allowed', type: 'five_hour', resetsAt: 200},
+		{status: 'rejected', type: 'five_hour', resetsAt: 200},
+	] as RateLimitInfo[]) {
+		const step = reduceTranscript(state, rl(info));
+		state = step.state;
+		outs.push(...step.out.map(o => (o.kind === 'limit-notice' ? o.info.status : o.kind)));
+	}
+	assert.deepEqual(outs, ['allowed_warning', 'rejected', 'rejected']);
+	assert.equal(state.limit?.resetsAt, 200);
+});
+
+test('a background task that failed on the usage limit prints the limit label', () => {
+	const step = reduceTranscript(initialTranscript(), {
+		type: 'ui',
+		event: {kind: 'task', id: 't', status: 'failed', background: true, description: 'Coder', summary: "You've hit your session limit · resets 6:10pm (UTC) (HTTP 429)"},
+	});
+	assert.deepEqual(step.out, [{kind: 'task', status: 'failed', description: 'Coder', summary: 'stopped: usage limit, resets 6:10pm (UTC)'}]);
 });

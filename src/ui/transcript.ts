@@ -1,6 +1,6 @@
 import type {AccountReason, ChatEvent, RouteInfo, ToolPatch, TurnOutcome, UiEvent} from '../public.js';
 import type {RateLimitInfo} from '../public.js';
-import {PLAN_TOOLS, planChanges, type PlanItem, type PlanNote} from '../public.js';
+import {PLAN_TOOLS, limitNoticeKey, planChanges, usageLimitLabel, type PlanItem, type PlanNote} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
 import type {ChatProfile, Tier} from '../public.js';
 import type {TurnSummary} from '../public.js';
@@ -11,6 +11,9 @@ import {showSummary} from './turn-summary.js';
 export const LIVE = {
 	maxRawChars: 2_000_000,
 	tailChars: 16_000,
+	tailStepChars: 4_000,
+	tailRowStep: 4,
+	frameMs: 50,
 	maxTools: 4,
 	maxInputRows: 10,
 	minTailRows: 3,
@@ -54,6 +57,7 @@ export interface TranscriptState {
 	mode: ChatMode;
 	approvals: number;
 	limit?: RateLimitInfo;
+	limitNoticed?: string[];
 	pendingApiError?: string;
 	account?: string;
 	lastSummary?: TurnSummary;
@@ -84,11 +88,14 @@ export type Out =
 	| {kind: 'account'; account: string; previous: string; reason: AccountReason}
 	| {kind: 'thinking'; text: string; durationMs?: number}
 	| {kind: 'task'; status: string; description: string; summary?: string}
+	| {kind: 'limit-notice'; info: RateLimitInfo}
 	| {kind: 'plan-note'; notes: PlanNote[]}
 	| {kind: 'route-block'; route: RouteInfo; previous?: Tier}
 	| {kind: 'route'; pinned?: Tier}
 	| {kind: 'profile-line'; agent: string; text: string}
 	| {kind: 'blank'};
+
+const LIMIT_NOTICES_KEPT = 8;
 
 export const ROUTE_TOOL_ID = 'yena-route';
 export const ROUTE_TOOL_NAME = 'Routing';
@@ -185,9 +192,11 @@ function reduceUi(state: TranscriptState, e: UiEvent): Step {
 				out: notes.length > 0 ? [{kind: 'plan-note', notes}] : [],
 			};
 		}
-		case 'task':
+		case 'task': {
 			if (e.status === 'running' || !e.background) return {state: {...state}, out: []};
-			return {state: {...state}, out: [{kind: 'task', status: e.status, description: e.description ?? 'task', ...(e.summary !== undefined && {summary: e.summary})}]};
+			const summary = usageLimitLabel(e.summary) ?? e.summary;
+			return {state: {...state}, out: [{kind: 'task', status: e.status, description: e.description ?? 'task', ...(summary !== undefined && {summary})}]};
+		}
 		case 'thinking-text':
 			return {state, out: [{kind: 'thinking', text: e.text, ...(e.durationMs !== undefined && {durationMs: e.durationMs})}]};
 		case 'tool-use': {
@@ -254,8 +263,12 @@ function reduceUi(state: TranscriptState, e: UiEvent): Step {
 			};
 		case 'api-error':
 			return {state: {...state, pendingApiError: e.code}, out: []};
-		case 'rate-limit':
-			return {state: {...state, limit: e.info}, out: []};
+		case 'rate-limit': {
+			const key = limitNoticeKey(e.info);
+			if (key === undefined || state.limitNoticed?.includes(key)) return {state: {...state, limit: e.info}, out: []};
+			const limitNoticed = [...(state.limitNoticed ?? []), key].slice(-LIMIT_NOTICES_KEPT);
+			return {state: {...state, limit: e.info, limitNoticed}, out: [{kind: 'limit-notice', info: e.info}]};
+		}
 		case 'result': {
 			const costUsd = typeof e.costUsd === 'number' ? e.costUsd : state.costUsd;
 			return flushPartial({...state, costUsd, status: null});

@@ -1,4 +1,4 @@
-import {HANDBACK_TOOL, SPAWN_TOOLS} from '../public.js';
+import {HANDBACK_TOOL, SPAWN_TOOLS, usageLimitLabel} from '../public.js';
 import type {AgentItem, ChatEvent, TaskStatus, ToolPatch, UiEvent} from '../public.js';
 
 export type AgentStatus = TaskStatus;
@@ -28,6 +28,7 @@ export type AgentBox = {
 	bytes: number;
 	pending: Map<string, {name: string; input: unknown}>;
 	report?: string;
+	limit?: string;
 	spawnName?: string;
 	aliases?: string[];
 	placeholder?: true;
@@ -192,12 +193,16 @@ const spawnBox = (state: AgentsState, id: string, input: unknown, parent?: strin
 	return addBox(state, box);
 };
 
-const finish = (box: AgentBox, status: AgentStatus, turn: number, report?: string): AgentBox => ({
-	...box,
-	status,
-	finishedTurn: turn,
-	...(box.report === undefined && report !== undefined && report.trim() !== '' && {report: report.slice(0, AGENTS_CAPS.report)}),
-});
+const finish = (box: AgentBox, status: AgentStatus, turn: number, report?: string): AgentBox => {
+	const next: AgentBox = {
+		...box,
+		status,
+		finishedTurn: turn,
+		...(box.report === undefined && report !== undefined && report.trim() !== '' && {report: report.slice(0, AGENTS_CAPS.report)}),
+	};
+	const limit = status === 'failed' ? usageLimitLabel(next.report ?? report) : undefined;
+	return limit === undefined ? next : {...next, limit};
+};
 
 const evict = (box: AgentBox, history: AgentEntry[], bytes: number): AgentBox => {
 	let dropped = box.dropped;
@@ -366,7 +371,10 @@ const taskEvent = (state: AgentsState, e: Extract<UiEvent, {kind: 'task'}>, now?
 		...(parentBox && {parent: parentBox.id, depth: Math.min(AGENTS_CAPS.depth, parentBox.depth + 1)}),
 	};
 	if (e.status !== 'running' && next.status === 'running') next = finish(next, e.status, state.turn, e.summary);
-	else if (e.summary !== undefined && next.report === undefined && e.status !== 'running') next = {...next, report: e.summary.slice(0, AGENTS_CAPS.report)};
+	else if (e.summary !== undefined && next.report === undefined && e.status !== 'running') {
+		const limit = e.status === 'failed' ? usageLimitLabel(e.summary) : undefined;
+		next = {...next, report: e.summary.slice(0, AGENTS_CAPS.report), ...(limit !== undefined && {limit})};
+	}
 	return putBox(state, next);
 };
 

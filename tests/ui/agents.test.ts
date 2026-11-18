@@ -255,3 +255,18 @@ test('seedFromTasks adds running agent tasks that have no box yet, with a notice
 	assert.deepEqual(b.history, [{kind: 'notice', text: SEED_NOTICE}]);
 	assert.equal(seedFromTasks(s, [{id: 'T1', status: 'running', background: true, taskType: 'local_agent', toolUseId: 'tu1'}]), s);
 });
+
+test('a failed task whose summary is a rate-limit error marks the box with the limit label', () => {
+	const failed = ui({kind: 'task', id: 't1', status: 'failed', toolUseId: 'a1', summary: "Agent terminated early due to an API error: You've hit your session limit · resets 6:10pm (UTC) (error type rate_limit, HTTP 429)"});
+	const s = run([spawn('a1', {name: 'coder'}), failed]);
+	const box = s.boxes.get('a1')!;
+	assert.equal(box.status, 'failed');
+	assert.equal(box.limit, 'stopped: usage limit, resets 6:10pm (UTC)');
+	const plain = run([spawn('a2'), ui({kind: 'task', id: 't2', status: 'failed', toolUseId: 'a2', summary: 'compile error'})]);
+	assert.equal(plain.boxes.get('a2')!.limit, undefined);
+});
+
+test('a failed Agent tool result with a rate-limit error marks the box too', () => {
+	const s = run([spawn('a1'), ui({kind: 'tool-result', toolUseId: 'a1', isError: true, text: 'API Error: 429 rate_limit_error'})]);
+	assert.equal(s.boxes.get('a1')!.limit, 'stopped: usage limit');
+});
