@@ -51,6 +51,7 @@ export function createChatHub(deps: ChatHubDeps = {}): ChatHub {
 				await provider.admit(req.origin);
 				await endModuleSessions('replaced', t => ctx.print(t));
 				const previous = hub.current;
+				if (previous?.profile && req.origin !== 'user') throw new Error(`A ${nounOf(previous.profile)} is open; only the user can replace it`);
 				if (options.refuseWhileRunning && previous?.opened?.session.state === 'running') throw new Error(answering(nounOf(previous.profile)));
 				if (req.attach !== true && previous?.opened?.session.state === 'idle') previous.opened.session.end?.();
 				if (previous) {

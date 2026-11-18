@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.6.1): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.6.2): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -139,6 +139,7 @@ Display, modelled on Claude Code's terminal UI:
 
 - Streaming tail (0.6.1): text deltas render at most every 50 ms (`LIVE.frameMs`); the tail's height only grows within a turn, in steps of 4 rows, and is padded with blank rows (it resets when the live text is printed); the 16 000-character window starts move in 4 000-character steps; every tail row is clamped to `columns - 1` cells.
 - Usage limits (0.6.1): a `rate-limit` event prints one warning line per window (rejected, or `allowed_warning` from 90%; keyed by kind, type and `resetsAt`), a rejected limit arms one unref'd timer that prints `Usage limit reset; you can continue.` when `resetsAt` passes (a later event cancels it); nothing is resumed or retried. A failed task or subagent whose error text is a rate-limit refusal (`usageLimitLabel`) shows the badge `USAGE LIMIT` and `stopped: usage limit, resets …` in the agent view; a background task row prints the same label.
+- Profile chats (0.6.2): only the user can replace an open profile chat; `chat start`, `chat new` or a resume from any other origin is refused (`A <noun> is open; only the user can replace it`).
 
 - The live area is kept shorter than the terminal (rows-3, rows-1 under 12 rows); on tiny terminals the streaming tail can shrink to nothing and several tools show as `N tools running`; the prompt and the status bar share the live budget (the permission prompt tier is picked from it, `PROMPT_ROWS` in `src/ui/prompt-state.ts`).
 

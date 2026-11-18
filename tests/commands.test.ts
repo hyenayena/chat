@@ -542,6 +542,20 @@ test('an open profile chat takes messages only from the user', async () => {
 	await done;
 });
 
+test('an open profile chat is replaced only by the user', async () => {
+	const env = setup();
+	const ctx = makeCtx();
+	const done = openProfile(ctx);
+	for (let i = 0; i < 100 && ctx.mounts === 0; i++) await tick();
+	await tick();
+	const refused = new Error('A chat is open; only the user can replace it');
+	await assert.rejects(run(env.chat, ['start', 'hi'], makeCtx({signal: true, caller: 'yena'})), refused);
+	await assert.rejects(run(env.chat, ['new'], makeCtx({signal: true, caller: 'yena'})), refused);
+	assert.equal(ctx.mounts, 1);
+	ctx.closeAll();
+	await done;
+});
+
 const openProfile = (ctx: ReturnType<typeof makeCtx>) =>
 	openProfileChat(
 		{id: 'clan', owner: 'clan', appendSystemPrompt: 'Moderate.', mainTools: ['Agent'], agents: {skeptic: {description: 'd', prompt: 'p', label: 'Skeptic', tone: 'teal'}}},
