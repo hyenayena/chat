@@ -698,7 +698,7 @@ test('with a host: input is read only while focused', async () => {
 	assert.match(t.lastFrame(), /> abc/);
 });
 
-test('with a host: the host key is never typed, → on an empty draft moves focus, Esc idle stays', async () => {
+test('with a host: the host key is never typed, → on an empty draft keeps focus, Esc idle stays', async () => {
 	const f = fakeHost();
 	const t = setup(undefined, {host: f.host});
 	await t.settle();
@@ -711,12 +711,7 @@ test('with a host: the host key is never typed, → on an empty draft moves focu
 	await t.settle();
 	t.press(`${ESC}[C`);
 	await t.settle();
-	assert.deepEqual(f.state.moves, ['right']);
-	t.press('ab');
-	await t.settle();
-	t.press(`${ESC}[C`);
-	await t.settle();
-	assert.deepEqual(f.state.moves, ['right']);
+	assert.deepEqual(f.state.moves, []);
 	t.press(ESC);
 	await t.settle(60);
 	t.press(ESC);

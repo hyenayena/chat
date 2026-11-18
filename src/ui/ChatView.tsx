@@ -1087,7 +1087,6 @@ export function ChatView(props: ChatViewProps) {
 		if (key.leftArrow) return edit({type: key.ctrl || key.meta ? 'wordLeft' : 'left'});
 		if (key.rightArrow) {
 			if (key.ctrl || key.meta) return edit({type: 'wordRight'});
-			if (host && edRef.current.text === '' && host.move('right')) return;
 			return edit({type: 'right'});
 		}
 		if (key.home) return edit({type: 'home'});
