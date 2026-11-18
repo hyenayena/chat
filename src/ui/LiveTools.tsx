@@ -1,12 +1,10 @@
 import React from 'react';
 import {Box, Text} from 'ink';
-import {inkTone, spinnerFrames} from '../kit.js';
-import {useSpinnerFrame} from './kit.js';
+import {inkTone} from '../kit.js';
+import {useSpinner} from './kit.js';
 import {formatToolGroup, runningToolRow} from './tool-card.js';
 import type {Scrub} from './tool-args.js';
 import {LIVE, type RunningTool, type ToolOut} from './transcript.js';
-
-const FRAMES = spinnerFrames('braille');
 
 export function LiveTools({
 	tools,
@@ -25,7 +23,7 @@ export function LiveTools({
 }) {
 	const folded = fold.length > 0 ? 1 : 0;
 	const active = tools.length > 0 || folded > 0;
-	const frame = useSpinnerFrame(FRAMES, 120, active);
+	const frame = useSpinner(active);
 
 	const {shown, more} = toolLayout(tools.length + folded, maxRows);
 	if (!active || maxRows <= 0) return null;

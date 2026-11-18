@@ -23,7 +23,7 @@ test('the pending fold is the first row, then the running tools with their elaps
 		frame(<LiveTools tools={[tool(1, {startedAt: 1000})]} fold={[done('/a.ts'), done('/b.ts')]} scrub={id} maxRows={4} width={39} now={4000} />),
 	);
 	assert.match(rows[0]!, /^✓ ▤ Read 2 files/);
-	assert.match(rows[1]!, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \$ sleep 1 +3\.0s$/);
+	assert.match(rows[1]!, /^[⣾⣽⣻⢿⡿⣟⣯⣷] \$ sleep 1 +3\.0s$/);
 });
 
 test('every row stays inside columns - 1 and extra tools collapse into a muted row', async () => {

@@ -1,6 +1,6 @@
 import React, {useMemo, useRef} from 'react';
 import {Text} from 'ink';
-import {SPINNERS, useSpinnerFrame} from './kit.js';
+import {useSpinner} from './kit.js';
 import {pickWorkingVerb} from './present.js';
 import {chatStatusRow, type StatusInput} from './status-bar.js';
 
@@ -15,7 +15,7 @@ export type ChatStatusBarProps = Omit<StatusInput, 'elapsedMs' | 'quietMs' | 've
 
 export function ChatStatusBar({pending, since, beat = 0, lastEventAt, columns, now = Date.now, ...input}: ChatStatusBarProps) {
 	const running = input.phase !== 'idle' || input.status !== null;
-	const frame = useSpinnerFrame(SPINNERS.sparkle, 120, running);
+	const frame = useSpinner(running);
 	const verbRef = useRef<string | undefined>(undefined);
 	const verb = useMemo(() => (verbRef.current = pickWorkingVerb(Math.random, verbRef.current)), [since, beat]);
 	const t = now();

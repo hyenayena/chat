@@ -1142,7 +1142,7 @@ test('thinking status shows the animated spinner, one hyena verb for the turn, s
 	await t.settle();
 	t.controller.ui({kind: 'thinking'});
 	await t.settle();
-	const line = /([·✢✳✶✻✽]) ([\w -]+)… [\dms. ]+ · esc to interrupt/;
+	const line = /([⣾⣽⣻⢿⡿⣟⣯⣷|/\\-]) ([\w -]+)… [\dms. ]+ · esc to interrupt/;
 	const first = bar(t).match(line);
 	assert.ok(first, 'spinner frame before the status text');
 	assert.ok((WORKING_VERBS as readonly string[]).includes(first[2]), first[2]);
@@ -1158,7 +1158,7 @@ test('each answer or tool call Claude prints brings a new working verb', async (
 	t.controller.setState('running');
 	t.controller.ui({kind: 'thinking'});
 	await t.settle();
-	const line = /[·✢✳✶✻✽] ([\w -]+)… /;
+	const line = /[⣾⣽⣻⢿⡿⣟⣯⣷|/\\-] ([\w -]+)… /;
 	const verbs = [bar(t).match(line)?.[1]];
 	t.controller.ui({kind: 'text', messageId: 'm1', text: 'first answer'});
 	await t.settle();

@@ -116,14 +116,15 @@ test('box content: spinner, name, short model, one-liners and the thinking row; 
 			},
 		},
 	]);
-	const live = all(layoutPanel(s, {columns: 81, rows: 40, maxRows: share(40), scrub, spinner: '✶', corner: '◳'}).rows);
-	assert.match(live, /✶ Explore/);
+	const live = all(layoutPanel(s, {columns: 81, rows: 40, maxRows: share(40), scrub, spinner: '⣻'}).rows);
+	assert.match(live, /⣻ Explore/);
 	assert.match(live, /haiku-4\.5/);
+	assert.match(all(layoutPanel(s, {columns: 81, rows: 40, maxRows: share(40), scrub}).rows), /⣾ Explore/);
 	assert.match(live, /● First line \[redacted\]/);
 	assert.ok(!live.includes(SECRET));
 	assert.ok(!live.includes('second'));
 	assert.match(live, /Read foo\.ts/);
-	assert.match(live, /◳ [A-Z][a-z]+…/);
+	assert.match(live, /╭ [A-Z][a-z]+…/);
 	for (const [outcome, word] of [
 		[{kind: 'tool-result', toolUseId: 'a', isError: false, text: ''}, 'DONE'],
 		[{kind: 'tool-result', toolUseId: 'a', isError: true, text: ''}, 'FAILED'],
@@ -131,7 +132,7 @@ test('box content: spinner, name, short model, one-liners and the thinking row; 
 		const done = layoutPanel(reduceAgents(s, {type: 'ui', event: outcome}), {columns: 81, rows: 40, maxRows: share(40), scrub});
 		const rows = done.rows;
 		assert.match(all(rows), new RegExp(word));
-		assert.doesNotMatch(all(rows), /◳ [A-Z][a-z]+…/);
+		assert.doesNotMatch(all(rows), /╭ [A-Z][a-z]+…/);
 		const badge = rows.flat().find(sp => sp.text === word)!;
 		assert.equal(badge.tone, word === 'DONE' ? 'add' : 'del');
 	}
@@ -174,9 +175,9 @@ test('navigate moves across the grid; up from the top row leaves the panel', () 
 });
 
 test('the box verb is varied, but stable for a box and its history length', () => {
-	const row = (id: string): string => all(layoutPanel(run([spawn(id, {subagent_type: 'W'})]), {columns: 81, rows: 40, maxRows: share(40), scrub, corner: '◳'}).rows);
+	const row = (id: string): string => all(layoutPanel(run([spawn(id, {subagent_type: 'W'})]), {columns: 81, rows: 40, maxRows: share(40), scrub}).rows);
 	assert.equal(row('a'), row('a'));
-	assert.match(row('a'), /◳ [A-Z][a-z]+…/);
-	const verbs = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => row(id).match(/◳ ([A-Z][a-z]+)…/)?.[1]));
+	assert.match(row('a'), /╭ [A-Z][a-z]+…/);
+	const verbs = new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(id => row(id).match(/╭ ([A-Z][a-z]+)…/)?.[1]));
 	assert.ok(verbs.size > 1);
 });

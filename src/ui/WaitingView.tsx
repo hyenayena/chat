@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Box, Text, useInput} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
-import {SPINNERS, Spinner, useViewHost} from './kit.js';
+import {Spinner, useViewHost} from './kit.js';
 
 export const WAIT_POLL_MS = 1000;
 
@@ -63,7 +63,7 @@ export function WaitingView(props: WaitingViewProps) {
 	return (
 		<Box>
 			<Text wrap="truncate">
-				<Spinner frames={SPINNERS.braille} intervalMs={80} /> {waitingText(title)}
+				<Spinner /> {waitingText(title)}
 			</Text>
 		</Box>
 	);

@@ -1,4 +1,4 @@
-import {COLUMN_BREAKPOINTS, columnTier, fixedRowBudget, paintTone, ROW_BREAKPOINTS, rowTier, SIDE_BY_SIDE_MIN_WIDTH, sliceStyledCells, styledCells, type ColumnTier, type GallerySection} from '../kit.js';
+import {COLUMN_BREAKPOINTS, columnTier, fixedRowBudget, paintTone, ROW_BREAKPOINTS, rowTier, SIDE_BY_SIDE_MIN_WIDTH, sliceStyledCells, spinnerFrame, styledCells, type ColumnTier, type GallerySection} from '../kit.js';
 import {PLAN} from './plan-widget.js';
 
 const scrub = (s: string): string => s;
@@ -123,9 +123,9 @@ export const toolsGallerySection: GallerySection = {
 			ok('mcp__github__search_issues', {query: 'tool cards'}, '3 results'),
 			fail('TodoWrite', {todos: []}, '<tool_use_error>InputValidationError: todos is required</tool_use_error>'),
 		];
-		return ({width: columns}) => {
+		return ({width: columns, ascii}) => {
 			const width = Math.max(1, columns - 1);
-			const running = card.runningToolRow({id: 'r1', name: 'Agent', input: {subagent_type: 'coder', description: 'Fix the parser'}, elapsedSeconds: 0, startedAt: 1000, activity: {name: 'Read', input: {file_path: 'src/parse.ts'}}}, scrub, width, '⠋', 15_000);
+			const running = card.runningToolRow({id: 'r1', name: 'Agent', input: {subagent_type: 'coder', description: 'Fix the parser'}, elapsedSeconds: 0, startedAt: 1000, activity: {name: 'Read', input: {file_path: 'src/parse.ts'}}}, scrub, width, spinnerFrame(0, {ascii}), 15_000);
 			const blocks = [running, card.formatToolCard(read('present.ts', 120, 1000), scrub, width), card.formatToolGroup(fold, scrub, width), ...items.map(t => card.formatToolCard(t, scrub, width))];
 			return blocks.flatMap(b => b.split('\n'));
 		};
@@ -179,7 +179,7 @@ export const statusGallerySection: GallerySection = {
 			const rows: string[] = [];
 			for (const [name, input] of states) {
 				rows.push(name);
-				for (const [, w] of tierSamples(width)) rows.push(bar.chatStatusRow(input, w - 1, {frame: ascii ? '*' : '✻', depth, ascii}));
+				for (const [, w] of tierSamples(width)) rows.push(bar.chatStatusRow(input, w - 1, {frame: spinnerFrame(0, {ascii}), depth, ascii}));
 			}
 			rows.push('turn summary');
 			for (const outcome of outcomes) rows.push(summary.turnSummaryRow(sampleSummary, outcome, width - 1, {depth, ascii}));
@@ -205,7 +205,7 @@ export const planGallerySection: GallerySection = {
 			const rows: string[] = [];
 			const base = {title: 'Plan', depth, ascii};
 			const tier = rowTier(height);
-			const spinner = ascii ? '|' : '⠹';
+			const spinner = spinnerFrame(2, {ascii});
 			const note = (text: string): string => paintTone(text, 'muted', depth);
 			if (tier === 'tiny') rows.push(note(`The plan is hidden below ${ROW_BREAKPOINTS.short} rows (${height} rows here)`));
 			if (tier === 'tall') {
@@ -301,12 +301,12 @@ export const layoutGallerySection: GallerySection = {
 				...head.planRows,
 				...head.panel.rows.map(r => r.map(s => s.text).join('')),
 				...(live.tail > 0 ? streamed.slice(-live.tail) : []),
-				...tools.slice(0, live.tools).map(t => card.runningToolRow(t, scrub, width - 1, ascii ? '*' : '⠋', 15_000)),
+				...tools.slice(0, live.tools).map(t => card.runningToolRow(t, scrub, width - 1, spinnerFrame(0, {ascii}), 15_000)),
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
 				paintTone('> ', 'muted', depth),
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
 				...(live.hint > 0 ? [paintTone(`  ${present.modeHint('acceptEdits')}`, 'muted', depth)] : []),
-				bar.chatStatusRow({...status, panelShown: head.panel.height > 0}, width - 1, {frame: ascii ? '*' : '✻', depth, ascii}),
+				bar.chatStatusRow({...status, panelShown: head.panel.height > 0}, width - 1, {frame: spinnerFrame(0, {ascii}), depth, ascii}),
 			];
 			const filler = Array.from({length: Math.max(0, rows - frame.length)}, () => paintTone('· transcript ·', 'muted', depth));
 			return [...filler, ...frame].map(cut);

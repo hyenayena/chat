@@ -3,7 +3,7 @@ import {Box, Text} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
 import type {ShellFeed} from '../public.js';
 import type {ShellSnapshot} from '../public.js';
-import {OutputTail, SPINNERS, useSpinnerFrame, useViewHost} from './kit.js';
+import {OutputTail, useSpinner, useViewHost} from './kit.js';
 
 export type ShellActivityProps = {
 	watch: ShellFeed;
@@ -17,7 +17,7 @@ export function ShellActivity({watch, host, now = Date.now}: ShellActivityProps)
 	const {columns} = useViewHost(host);
 	const [snap, setSnap] = useState<ShellSnapshot>(() => watch.get());
 	const [, setTick] = useState(0);
-	const frame = useSpinnerFrame(SPINNERS.braille, 100);
+	const frame = useSpinner(snap.calls.length > 0);
 	useEffect(() => {
 		setSnap(watch.get());
 		return watch.subscribe(() => setSnap(watch.get()));

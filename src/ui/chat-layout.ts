@@ -4,7 +4,7 @@ import type {AgentsState} from './agents.js';
 import {PLAN, planWidgetRows, type PlanView} from './plan-widget.js';
 import type {Scrub} from './tool-args.js';
 
-export type HeaderLook = {rows: number; columns: number; scrub: Scrub; spinner?: string; corner?: string};
+export type HeaderLook = {rows: number; columns: number; scrub: Scrub; spinner?: string};
 
 export type HeaderLayout = {
 	planRows: string[];

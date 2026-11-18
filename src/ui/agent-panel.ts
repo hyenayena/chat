@@ -1,8 +1,8 @@
-import {boxRows, frameAround, gridLayout, joinBlocks, rowTier, type BoxBadge, type SpanRow} from '../kit.js';
+import {boxRows, frameAround, glyph, gridLayout, joinBlocks, rowTier, spinnerFrame, type BoxBadge, type SpanRow} from '../kit.js';
 import type {AgentBox, AgentEntry, AgentsState} from './agents.js';
 import {shortModel, toolOneLiner, verbFor, type Scrub} from './present.js';
 
-export type PanelLook = {columns: number; rows: number; maxRows: number; scrub: Scrub; spinner?: string; corner?: string};
+export type PanelLook = {columns: number; rows: number; maxRows: number; scrub: Scrub; spinner?: string};
 
 type Place = {id: string; x0: number; x1: number};
 type Unit = {lines: SpanRow[]; places: Place[]};
@@ -60,13 +60,13 @@ const bodyOf = (box: AgentBox, height: number, look: PanelLook): SpanRow[] => {
 		if (line) lines.unshift(line);
 	}
 	if (lines.length === 0 && room > 0 && box.description !== '') lines.push([{text: firstLine(look.scrub(box.description)), tone: 'dim'}]);
-	return [...lines, [{text: `${look.corner ?? '◰'} ${verbFor(box.id, box.history.length)}…`, tone: 'dim'}]];
+	return [...lines, [{text: `${glyph('cornerTl')} ${verbFor(box.id, box.history.length)}…`, tone: 'dim'}]];
 };
 
 const renderBox = (state: AgentsState, box: AgentBox, width: number, height: number, look: PanelLook): SpanRow[] => {
 	const running = box.status === 'running';
 	const name = look.scrub(box.name);
-	const lead = running ? (look.spinner ?? '✻') : GLYPH[box.status];
+	const lead = running ? (look.spinner ?? spinnerFrame(0)) : GLYPH[box.status];
 	const parent = box.parent !== undefined ? state.boxes.get(box.parent) : undefined;
 	const calls = state.order.filter(id => state.boxes.get(id)?.parent === box.id).length;
 	const footer = [parent ? `by ${look.scrub(parent.name)}` : '', calls > 0 ? `calls ${calls}` : ''].filter(Boolean).join(' · ');

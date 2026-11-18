@@ -27,7 +27,7 @@ const BASE: StatusInput = {
 };
 
 const bar = (input: Partial<StatusInput>, width: number, depth: ColorDepth = 'none', ascii = false): string =>
-	stripStyles(withColorDepth(depth, () => chatStatusRow({...BASE, ...input}, width, {frame: '✻', depth, ascii})));
+	stripStyles(withColorDepth(depth, () => chatStatusRow({...BASE, ...input}, width, {frame: '⣾', depth, ascii})));
 
 test('idle, wide: every segment in the fixed order', () => {
 	const row = bar({}, 200);
@@ -38,10 +38,10 @@ test('idle, wide: every segment in the fixed order', () => {
 
 test('running: spinner, verb, elapsed, tokens and the interrupt hint; shorter forms keep the activity', () => {
 	const input = {phase: 'running' as const, elapsedMs: 72_000, status: {kind: 'thinking' as const, tokens: 1200}};
-	assert.match(bar(input, 200), /^✻ Sniffing… 1m 12s · ↓ 1\.2k · esc to interrupt · opus/);
-	assert.match(bar(input, 30), /^✻ 1m 12s/);
-	assert.equal(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 14), '✻ 1m 12s');
-	assert.match(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 30), /^✻ Sniffing… 1m 12s/);
+	assert.match(bar(input, 200), /^⣾ Sniffing… 1m 12s · ↓ 1\.2k · esc to interrupt · opus/);
+	assert.match(bar(input, 30), /^⣾ 1m 12s/);
+	assert.equal(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 14), '⣾ 1m 12s');
+	assert.match(bar({...input, model: undefined, route: undefined, context: undefined, account: undefined, tasks: [], project: undefined}, 30), /^⣾ Sniffing… 1m 12s/);
 });
 
 test('awaiting approval, interrupting and quiet', () => {
@@ -86,12 +86,12 @@ test('segments drop from the right as the width shrinks, never above the width, 
 
 	for (const depth of ['truecolor', '256', '16', 'none'] as ColorDepth[]) {
 		for (let w = 1; w <= 200; w++) {
-			const styled = withColorDepth(depth, () => chatStatusRow({...BASE, ...input}, w, {frame: '✻', depth}));
+			const styled = withColorDepth(depth, () => chatStatusRow({...BASE, ...input}, w, {frame: '⣾', depth}));
 			assert.ok(styledCells(styled) <= w, `${depth} ${w}`);
 		}
 	}
 	assert.ok(!bar(input, 60).includes('yena ⎇'));
-	assert.ok(bar(input, 25).startsWith('✻'));
+	assert.ok(bar(input, 25).startsWith('⣾'));
 });
 
 test('ascii replaces the meter and branch glyphs', () => {
@@ -105,7 +105,7 @@ test('hostile model, account, branch and project names are scrubbed and cut', ()
 	const evil = `x${ESC}]0;title${String.fromCharCode(7)}${ESC}[31my`;
 	const long = 'L'.repeat(300);
 	const styled = withColorDepth('none', () =>
-		chatStatusRow({...BASE, model: evil, account: evil, branch: long, project: evil, route: evil, limit: evil}, 300, {frame: '✻', depth: 'none'}),
+		chatStatusRow({...BASE, model: evil, account: evil, branch: long, project: evil, route: evil, limit: evil}, 300, {frame: '⣾', depth: 'none'}),
 	);
 	const plain = stripStyles(styled);
 	assert.ok(!plain.includes(ESC) && !plain.includes(String.fromCharCode(7)));
