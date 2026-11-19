@@ -20,3 +20,4 @@ export {chatProvider, chatProviders, registerChatProvider} from './registry.js';
 export {currentChat, type CurrentChat} from './current.js';
 export * from './contract/module-session.js';
 export {openSession, collectAnswer} from './module-sessions.js';
+export {postToChat, MODULE_MESSAGE_MAX, type ModuleMessage, type ModuleMessageResult} from './module-messages.js';

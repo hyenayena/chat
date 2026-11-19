@@ -75,6 +75,10 @@ try {
 }
 ```
 
+### Messages to the open chat (0.7.2)
+
+`postToChat({owner, text})` (`src/module-messages.ts`, exported from `src/public.ts`) puts a message from a module into the user's open chat and resolves `'sent'`, or `'no-chat'` when none is open (it never opens one). `owner` is a module name (`[a-z][a-z0-9-]{0,31}`); `text` is non-empty and at most `MODULE_MESSAGE_MAX` (20000) characters. It goes through the same gate as `chat send` with origin `module`: a profile chat refuses it (`A module chat takes messages only from the user`) and a chat on a subscription refuses it (only an API key chat accepts module messages); a refusal throws, and nothing is delivered. While the chat answers the message is queued like the user's own. Without the chat module the call throws `The chat module is not loaded`.
+
 ### Module profiles (0.6.0; directions and the exchange 0.7.0)
 
 A module opens a chat with its own characters through `openProfileChat(profile, ctx)` (`src/profiles.ts`, exported from `src/public.ts`). The `ChatProfile` (`src/contract/profile.ts`) is plain data: an id and owner, an optional banner, the text appended to the system prompt, the main tools, up to 8 agents (`description`, `prompt`, `label`, `tone`, optional `tier`), `turnAgentCalls` (1 to 8), `keepAliveMs` (at most 30 minutes), `mainTier`, `loadInstructions: false`, `passWord`, and the optional `mainText: 'direction'` and `agentInput: 'turn'` (0.7.0). `checkProfile` validates it, applies the caps (`PROFILE_LIMITS`) and returns a deep-frozen copy; a bad field throws `Invalid chat profile: <field>`. Tones are the names of `PROFILE_TONES` (`teal`, `green`, `yellow`, `orange`, `blue`, `violet`), mapped onto existing theme tones.

@@ -9,6 +9,7 @@ import {clockTime} from './clock-time.js';
 import {createFixCommand} from './fix.js';
 import {createChatHub, sendRefused, type ChatHub, type HeldChat} from './hub.js';
 import {errClass, noopLog} from './log.js';
+import {setModulePoster} from './module-messages.js';
 import {originOf} from './origin.js';
 import {checkProfile, nounOf, type ChatProfile, type ProfileSessionInfo} from './contract/profile.js';
 import {createProfileStore, MAX_BINDINGS, SESSION_ID_RE} from './profile-bindings.js';
@@ -241,6 +242,20 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		await hub.replaceChat(provider, {origin, fresh: true, attach: false, keep: false, mode: 'default', profile}, ctx);
 	};
 	setProfileOpener(openProfile);
+	setModulePoster(async ({owner, text}) => {
+		const held = hub.current;
+		const deliver = held?.deliver;
+		if (!held || !deliver) return 'no-chat';
+		try {
+			gateSend(held, 'module');
+		} catch (err) {
+			log.warn('module message refused', {owner, err});
+			throw err;
+		}
+		deliver(text);
+		log.info('module message sent to the open chat', {owner, chars: text.length});
+		return 'sent';
+	});
 
 	const resumeProfile = async (sessionId: string, ctx: CommandContext): Promise<void> => {
 		const origin = originOf(ctx);

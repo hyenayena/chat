@@ -10,7 +10,7 @@ import {sanitizeText} from './kit.js';
 import {errClass, noopLog} from './log.js';
 import {chatProvider, chatProviders} from './registry.js';
 
-const OWNER = /^[a-z][a-z0-9-]{0,31}$/;
+export const OWNER = /^[a-z][a-z0-9-]{0,31}$/;
 const MODES: readonly string[] = ['default', 'plan'];
 const SEC = 1000;
 const HOUR = 3600 * SEC;

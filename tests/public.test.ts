@@ -47,12 +47,13 @@ test('the public entry reaches no UI module, no process or file API and no theme
 
 test('the public entry exports the provider contract and the registry', async () => {
 	const pub = await import('../src/public.js');
-	for (const name of ['isInteractive', 'registerChatProvider', 'chatProviders', 'chatProvider', 'currentChat', 'readChatEvent', 'readUiEvent', 'readPermissionRequest', 'readPermissionDecision', 'openSession', 'collectAnswer', 'checkProfile', 'isPassReply', 'openProfileChat', 'newTracker', 'trackEvent', 'dropCalls', 'pendingPersonas']) {
+	for (const name of ['isInteractive', 'registerChatProvider', 'chatProviders', 'chatProvider', 'currentChat', 'readChatEvent', 'readUiEvent', 'readPermissionRequest', 'readPermissionDecision', 'openSession', 'collectAnswer', 'postToChat', 'checkProfile', 'isPassReply', 'openProfileChat', 'newTracker', 'trackEvent', 'dropCalls', 'pendingPersonas']) {
 		assert.equal(typeof (pub as Record<string, unknown>)[name], 'function', name);
 	}
 	assert.equal(typeof pub.ContractError, 'function');
 	assert.equal('setCurrentChat' in pub, false);
 	assert.equal('setProfileOpener' in pub, false);
+	assert.equal('setModulePoster' in pub, false);
 	assert.ok(pub.PROFILE_ID_RE instanceof RegExp && pub.PROFILE_AGENT_RE instanceof RegExp);
 	assert.equal(pub.PROFILE_LIMITS.mainTools, 8);
 	assert.equal(pub.PROFILE_TONES.teal, 'accent');

@@ -5,7 +5,7 @@ import path from 'node:path';
 import {test} from 'node:test';
 import {checkCommandDocs} from '../src/kit.js';
 import {createChatCommands} from '../src/commands.js';
-import {currentChat, openProfileChat, profileSessions, registerChatProfile, registerChatProvider, type ChatProfile} from '../src/public.js';
+import {currentChat, openProfileChat, postToChat, profileSessions, registerChatProfile, registerChatProvider, type ChatProfile} from '../src/public.js';
 import {makeCtx} from './helpers/fake-ctx.js';
 import {makeProvider} from './helpers/fake-provider.js';
 import {cleanup, openChat, release, run, setup, tick} from './helpers/env.js';
@@ -538,6 +538,48 @@ test('an open profile chat takes messages only from the user', async () => {
 	await assert.rejects(run(env.chat, ['send', 'hi'], makeCtx({signal: true})), new Error(refused));
 	await run(env.chat, ['send', 'hi'], makeCtx());
 	assert.deepEqual(env.fu.delivered, ['hi']);
+	ctx.closeAll();
+	await done;
+});
+
+test('postToChat reports no chat and never opens one', async () => {
+	const env = setup();
+	assert.equal(await postToChat({owner: 'demo', text: 'hi'}), 'no-chat');
+	assert.equal(env.fake.opens.length, 0);
+	assert.deepEqual(env.fu.delivered, []);
+});
+
+test('postToChat delivers to the open chat', async () => {
+	const env = setup();
+	const {ctx, done} = await openChat(env);
+	assert.equal(await postToChat({owner: 'demo', text: ' hi there '}), 'sent');
+	assert.deepEqual(env.fu.delivered, ['hi there']);
+	assert.deepEqual(env.fake.admitSendCalls.slice(-1), ['module']);
+	ctx.closeAll();
+	await done;
+});
+
+test('postToChat is rejected when the chat refuses module messages', async () => {
+	const env = setup({
+		admitSend: () => {
+			throw new Error('API key only');
+		},
+	});
+	const {ctx, done} = await openChat(env);
+	await assert.rejects(postToChat({owner: 'demo', text: 'hi'}), /API key only/);
+	assert.deepEqual(env.fu.delivered, []);
+	ctx.closeAll();
+	await done;
+});
+
+test('postToChat is refused by an open profile chat', async () => {
+	const env = setup();
+	const ctx = makeCtx();
+	const done = openProfile(ctx);
+	for (let i = 0; i < 100 && ctx.mounts === 0; i++) await tick();
+	await tick();
+	await assert.rejects(postToChat({owner: 'demo', text: 'hi'}), /A module chat takes messages only from the user/);
+	assert.deepEqual(env.fu.delivered, []);
 	ctx.closeAll();
 	await done;
 });
