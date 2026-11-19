@@ -348,7 +348,9 @@ function reduceUiProfile(state: TranscriptState, e: UiEvent): Step {
 		}
 		case 'tool-result': {
 			const r = trackResult(t, e);
-			return {state: {...step.state, profile: r.t}, out: r.hide || (!t.calls.has(e.toolUseId) && isProfileId(t, e.toolUseId)) ? lineOuts(r.lines) : step.out};
+			// In direction mode a failed or refused persona call stays off the table: the turn ends with "No one answered" if nobody spoke.
+			const quiet = r.hide || (dir !== undefined && t.calls.has(e.toolUseId)) || (!t.calls.has(e.toolUseId) && isProfileId(t, e.toolUseId));
+			return {state: {...step.state, profile: r.t}, out: quiet ? lineOuts(r.lines) : step.out};
 		}
 		default:
 			return step;

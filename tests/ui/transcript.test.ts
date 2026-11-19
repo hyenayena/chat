@@ -470,6 +470,12 @@ describe('direction mode', () => {
 		assert.deepEqual(kinds(order.out), ['no-answer', 'outcome', 'blank']);
 	});
 
+	test('a refused or failed persona call prints no card; an ordinary profile keeps it', () => {
+		const events: ChatEvent[] = [sent, spawn('a1', 'skeptic'), said('a1', 'A'), done('a1'), ui({kind: 'tool-use', toolUseId: 's1', name: 'SendMessage', input: {to: 'skeptic', message: 'go'}}), ui({kind: 'tool-result', toolUseId: 's1', isError: true, text: 'Skeptic already answered this message'}), end];
+		assert.deepEqual(kinds(go(events).out), ['profile-line']);
+		assert.ok(kinds(go(events, plain).out).includes('tool'));
+	});
+
 	test('no no-answer when a line came, outside an exchange, or after an interrupt', () => {
 		assert.ok(!kinds(go([sent, spawn('a1', 'skeptic'), said('a1', 'A'), done('a1'), end]).out).includes('no-answer'));
 		assert.deepEqual(kinds(go([text('background'), end]).out), []);
