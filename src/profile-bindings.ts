@@ -1,7 +1,7 @@
 import {appendFile, mkdir, readFile, rename, rm, stat, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import type {Logger} from '../../../src/api.js';
-import {PROFILE_AGENT_RE, PROFILE_ARG_RE, PROFILE_ID_RE, PROFILE_LIMITS} from './contract/profile.js';
+import {DIRECTION_LIMITS, PROFILE_AGENT_RE, PROFILE_ARG_RE, PROFILE_ID_RE, PROFILE_LIMITS} from './contract/profile.js';
 import {noopLog} from './log.js';
 
 export const PROFILES_FILE = 'profiles.json';
@@ -15,7 +15,11 @@ const NOUN_RE = /^[a-z]{2,16}$/;
 
 export type ProfileBinding = {id: string; owner: string; noun?: string; args: string[]; at: number; last: number};
 export type BoundSession = ProfileBinding & {sessionId: string};
-export type SavedLine = {n: number; at: number; agent: string; text: string};
+export type SavedRecord =
+	| {n: number; at: number; agent: string; text: string}
+	| {n: number; at: number; kind: 'direction'; text: string}
+	| {n: number; at: number; kind: 'silence'};
+export type NewRecord = {n: number; kind?: 'line'; agent: string; text: string} | {n: number; kind: 'direction'; text: string} | {n: number; kind: 'silence'};
 
 export type ProfileStore = {
 	bind(sessionId: string, binding: {id: string; owner: string; noun?: string; args?: readonly string[]}): Promise<void>;
@@ -24,8 +28,9 @@ export type ProfileStore = {
 	has(sessionId: string): Promise<boolean>;
 	ids(): Promise<ReadonlySet<string>>;
 	listFor(id: string, limit: number): Promise<BoundSession[]>;
+	addRecord(sessionId: string, record: NewRecord): Promise<void>;
 	addLine(sessionId: string, line: {n: number; agent: string; text: string}): Promise<void>;
-	lines(sessionId: string): Promise<SavedLine[]>;
+	lines(sessionId: string): Promise<SavedRecord[]>;
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -41,7 +46,7 @@ function parseBinding(v: unknown): ProfileBinding | undefined {
 	return {id, owner, ...(noun !== undefined && {noun}), args: args as string[], at, last};
 }
 
-function parseLine(raw: string): SavedLine | undefined {
+function parseLine(raw: string): SavedRecord | undefined {
 	let v: unknown;
 	try {
 		v = JSON.parse(raw);
@@ -49,10 +54,26 @@ function parseLine(raw: string): SavedLine | undefined {
 		return undefined;
 	}
 	if (!isRecord(v)) return undefined;
-	const {n, at, agent, text} = v;
+	const {n, at, agent, text, kind} = v;
 	if (typeof n !== 'number' || !Number.isInteger(n) || n < 0 || !isTime(at)) return undefined;
+	if (kind === 'silence') return {n, at, kind};
+	if (kind === 'direction') {
+		if (typeof text !== 'string' || text === '' || [...text].length > DIRECTION_LIMITS.chars + 1) return undefined;
+		return {n, at, kind, text};
+	}
+	if (kind !== undefined) return undefined;
 	if (typeof agent !== 'string' || !PROFILE_AGENT_RE.test(agent) || typeof text !== 'string' || text === '') return undefined;
 	return {n, at, agent, text};
+}
+
+function entryOf(r: NewRecord): SavedRecord | undefined {
+	const at = Date.now();
+	if (r.kind === 'silence') return {n: r.n, at, kind: 'silence'};
+	if (r.kind === 'direction') {
+		const text = r.text.trim();
+		return text === '' || [...text].length > DIRECTION_LIMITS.chars + 1 ? undefined : {n: r.n, at, kind: 'direction', text};
+	}
+	return PROFILE_AGENT_RE.test(r.agent) && r.text.trim() !== '' ? {n: r.n, at, agent: r.agent, text: r.text} : undefined;
 }
 
 export function createProfileStore(opts: {dataDir: string; log?: Logger}): ProfileStore {
@@ -121,7 +142,7 @@ export function createProfileStore(opts: {dataDir: string; log?: Logger}): Profi
 
 	const lineFile = (sessionId: string): string => path.join(linesDir, `${sessionId}.jsonl`);
 
-	const readLines = async (sessionId: string): Promise<SavedLine[]> => {
+	const readLines = async (sessionId: string): Promise<SavedRecord[]> => {
 		let raw: string;
 		try {
 			raw = await readFile(lineFile(sessionId), 'utf8');
@@ -134,6 +155,34 @@ export function createProfileStore(opts: {dataDir: string; log?: Logger}): Profi
 			.filter(l => l !== '')
 			.flatMap(l => parseLine(l) ?? []);
 	};
+
+	const addRecord = (sessionId: string, record: NewRecord): Promise<void> =>
+		serial(async () => {
+			checkId(sessionId);
+			const entry = entryOf(record);
+			if (!(await read()).has(sessionId) || !entry) return;
+			const target = lineFile(sessionId);
+			await mkdir(linesDir, {recursive: true, mode: 0o700});
+			const before = counts.get(sessionId) ?? (await readLines(sessionId)).length;
+			await appendFile(target, `${JSON.stringify(entry)}\n`, {mode: 0o600});
+			counts.set(sessionId, before + 1);
+			const size = (await stat(target)).size;
+			if (before + 1 <= MAX_LINES && size <= MAX_LINES_BYTES) return;
+			const serialized = (await readLines(sessionId)).map(l => `${JSON.stringify(l)}\n`);
+			let from = Math.max(0, serialized.length - MAX_LINES);
+			let total = 0;
+			for (let i = serialized.length - 1; i >= from; i--) {
+				total += Buffer.byteLength(serialized[i]!);
+				if (total > MAX_LINES_BYTES) {
+					from = i + 1;
+					break;
+				}
+			}
+			const tmp = `${target}.${process.pid}.tmp`;
+			await writeFile(tmp, serialized.slice(from).join(''), {mode: 0o600});
+			await rename(tmp, target);
+			counts.set(sessionId, serialized.length - from);
+		});
 
 	return {
 		bind: (sessionId, b) =>
@@ -168,33 +217,8 @@ export function createProfileStore(opts: {dataDir: string; log?: Logger}): Profi
 					.slice(0, Math.max(0, limit))
 					.map(([sessionId, b]) => ({sessionId, ...b})),
 			),
-		addLine: (sessionId, line) =>
-			serial(async () => {
-				checkId(sessionId);
-				if (!(await read()).has(sessionId) || !PROFILE_AGENT_RE.test(line.agent) || line.text.trim() === '') return;
-				const entry: SavedLine = {n: line.n, at: Date.now(), agent: line.agent, text: line.text};
-				const target = lineFile(sessionId);
-				await mkdir(linesDir, {recursive: true, mode: 0o700});
-				const before = counts.get(sessionId) ?? (await readLines(sessionId)).length;
-				await appendFile(target, `${JSON.stringify(entry)}\n`, {mode: 0o600});
-				counts.set(sessionId, before + 1);
-				const size = (await stat(target)).size;
-				if (before + 1 <= MAX_LINES && size <= MAX_LINES_BYTES) return;
-				const serialized = (await readLines(sessionId)).map(l => `${JSON.stringify(l)}\n`);
-				let from = Math.max(0, serialized.length - MAX_LINES);
-				let total = 0;
-				for (let i = serialized.length - 1; i >= from; i--) {
-					total += Buffer.byteLength(serialized[i]!);
-					if (total > MAX_LINES_BYTES) {
-						from = i + 1;
-						break;
-					}
-				}
-				const tmp = `${target}.${process.pid}.tmp`;
-				await writeFile(tmp, serialized.slice(from).join(''), {mode: 0o600});
-				await rename(tmp, target);
-				counts.set(sessionId, serialized.length - from);
-			}),
+		addLine: (sessionId, line) => addRecord(sessionId, line),
+		addRecord: (sessionId, record) => addRecord(sessionId, record),
 		lines: sessionId => serial(async () => (SESSION_ID_RE.test(sessionId) ? readLines(sessionId) : [])),
 	};
 }

@@ -468,3 +468,29 @@ test('the noun replaces "chat" in the always-allowed and mode lines', () => {
 	assert.equal(strip(formatModeLine('acceptEdits', undefined, scrub, 'clan')), 'Mode: auto-accept edits (this clan only)');
 	assert.equal(strip(formatModeLine('acceptEdits')), 'Mode: auto-accept edits (this chat only)');
 });
+
+test('formatDirection: muted, indented, at most two rows, within the width', async () => {
+	const {formatDirection, formatNotice} = await import('../../src/ui/present.js');
+	const text = `# Plan\n- **Skeptic**, check \`this\` [claim](http://x): ${'word '.repeat(60)}`;
+	for (const width of [20, 50, 100, 160]) {
+		for (const depth of ['truecolor', 'none'] as ColorDepth[]) {
+			const rows = withColorDepth(depth, () => formatDirection(text, s => s, width).split('\n'));
+			assert.ok(rows.length <= 2, `${width}: ${rows.length} rows`);
+			for (const row of rows) {
+				assert.ok(styledCells(row) <= width, `${width}: ${stripStyles(row)}`);
+				assert.ok(stripStyles(row).startsWith('  '));
+			}
+		}
+	}
+	const one = withColorDepth('truecolor', () => formatDirection('Hello', s => s, 50));
+	assert.equal(one, withColorDepth('truecolor', () => formatNotice('  Hello', s => s)));
+});
+
+test('formatDirection: markdown flattened, 200 characters cap, scrub applied', async () => {
+	const {formatDirection, directionPlain} = await import('../../src/ui/present.js');
+	assert.equal(directionPlain('## Head\n> quote\n1. one\n* two\n```ts\nconst x = 1;\n```\n__bold__ *em* _it_ [t](u)'), 'Head quote one two const x = 1; bold em it t');
+	const long = withColorDepth('none', () => formatDirection('x'.repeat(500), s => s, 400));
+	assert.equal(stripStyles(long).trim(), `${'x'.repeat(200)}\u2026`);
+	const hidden = withColorDepth('none', () => formatDirection('token secret', s => s.replace(/secret/g, '[x]'), 60));
+	assert.ok(!hidden.includes('secret') && hidden.includes('[x]'));
+});

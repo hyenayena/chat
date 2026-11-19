@@ -1,6 +1,6 @@
 import {watchChatActivity} from './activity.js';
 import type {BuildInfo, CommandContext, Logger, MountControl, PrintOptions, UiElement, ViewHost} from '../../../src/api.js';
-import {nounOf} from './contract/profile.js';
+import {NO_ANSWER_TEXT, nounOf} from './contract/profile.js';
 import type {ChatProvider, OpenedChat, OpenEnv, OpenRequest} from './contract/provider.js';
 import type {ShellFeed} from './contract/shell.js';
 import {clockTime} from './clock-time.js';
@@ -104,7 +104,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	if (!opened) return;
 
 	const {session, scrub, reveal, projectDir, resume} = opened;
-	const {formatBanner, formatFileCard, assistantPrint, assistantRows, formatNotice, formatProfileLine, formatUserLine, listProjectFiles} = ui;
+	const {formatBanner, formatFileCard, assistantPrint, assistantRows, formatDirection, formatNotice, formatProfileLine, formatUserLine, listProjectFiles} = ui;
 	const startedAt = Date.now();
 
 	let projectFiles: readonly string[] = [];
@@ -186,9 +186,9 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 				...(opened.pin && {pin: opened.pin}),
 				...(req.profile && {profile: req.profile}),
 				...(store && {
-					onProfileLine: (line: {agent: string; text: string}) => {
+					onProfileRecord: (record: Parameters<NonNullable<ChatViewProps['onProfileRecord']>>[0]) => {
 						const id = session.sessionId ?? boundId;
-						if (id) store.addLine(id, {n: sentCount, agent: line.agent, text: line.text}).catch(failed);
+						if (id) store.addRecord(id, {n: sentCount, ...record}).catch(failed);
 					},
 				}),
 				...(opened.model !== undefined && {initialModel: opened.model}),
@@ -222,16 +222,23 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 			const saved = store ? await store.lines(resume).catch(() => []) : [];
 			let users = all.slice(0, all.length - earlier.length).filter(m => m.role === 'user').length;
 			const printLines = (): void => {
+				const columns = chatHost?.columns() ?? 0;
+				const width = columns > 1 ? columns - 1 : undefined;
 				for (const l of saved) {
 					if (l.n !== users) continue;
+					if ('kind' in l) {
+						if (l.kind === 'silence') print(formatNotice(NO_ANSWER_TEXT, scrub));
+						else print(formatDirection(l.text, scrub, width), {render: w => formatDirection(l.text, scrub, w)});
+						continue;
+					}
 					const agent = profile && Object.hasOwn(profile.agents, l.agent) ? profile.agents[l.agent] : undefined;
 					const view = {label: agent?.label ?? l.agent, tone: agent?.tone ?? ('teal' as const), text: l.text};
-					const columns = chatHost?.columns() ?? 0;
-					print(formatProfileLine(view, scrub, columns > 1 ? columns - 1 : undefined), {render: w => formatProfileLine(view, scrub, w)});
+					print(formatProfileLine(view, scrub, width), {render: w => formatProfileLine(view, scrub, w)});
 				}
 			};
 			printLines();
 			for (const m of earlier) {
+				if (m.role !== 'user' && profile?.mainText === 'direction') continue;
 				print(' ');
 				if (m.role === 'user') {
 					print(formatUserLine(m.text, scrub));

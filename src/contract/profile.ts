@@ -21,6 +21,9 @@ export const PROFILE_LIMITS = {
 	args: 16,
 } as const;
 
+export const DIRECTION_LIMITS = {chars: 200, rows: 2, buffer: 2048} as const;
+export const NO_ANSWER_TEXT = 'No one answered';
+
 export const PROFILE_TONES = {
 	teal: 'accent',
 	green: 'ok',
@@ -54,6 +57,8 @@ export type ChatProfile = {
 	mainTier?: Tier;
 	loadInstructions?: false;
 	passWord?: string;
+	mainText?: 'direction';
+	agentInput?: 'turn';
 };
 
 export type ChatProfileSource = {
@@ -119,6 +124,8 @@ export function checkProfile(p: unknown): ChatProfile {
 
 	if (p.mainTier !== undefined && !isTier(p.mainTier)) throw invalid('mainTier');
 	if (p.loadInstructions !== undefined && p.loadInstructions !== false) throw invalid('loadInstructions');
+	if (p.mainText !== undefined && p.mainText !== 'direction') throw invalid('mainText');
+	if (p.agentInput !== undefined && p.agentInput !== 'turn') throw invalid('agentInput');
 	const passWord = p.passWord === undefined ? undefined : text(p.passWord, 'passWord', PROFILE_LIMITS.passWord, {single: true});
 	if (passWord !== undefined && /\s|:/u.test(passWord)) throw invalid('passWord');
 
@@ -136,6 +143,8 @@ export function checkProfile(p: unknown): ChatProfile {
 		...(p.mainTier !== undefined && {mainTier: p.mainTier}),
 		...(p.loadInstructions === false && {loadInstructions: false as const}),
 		...(passWord !== undefined && {passWord}),
+		...(p.mainText === 'direction' && {mainText: 'direction' as const}),
+		...(p.agentInput === 'turn' && {agentInput: 'turn' as const}),
 	});
 }
 

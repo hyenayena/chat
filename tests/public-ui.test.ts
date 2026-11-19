@@ -16,6 +16,7 @@ test('the UI entry exposes exactly the stable names', async () => {
 		'createShellElement',
 		'createWaitingElement',
 		'formatBanner',
+		'formatDirection',
 		'formatFileCard',
 		'formatNotice',
 		'formatProfileLine',
@@ -34,4 +35,9 @@ test('createChatElement returns an element for a controller', async () => {
 test('createPermissionElement refuses a handle that openSession did not return', async () => {
 	const {createPermissionElement} = await import('../src/public-ui.js');
 	assert.throws(() => createPermissionElement({session: {} as never, request: {} as never}), /Not a module session/);
+});
+
+test('formatDirection is part of the UI entry', async () => {
+	const {formatDirection} = await import('../src/public-ui.js');
+	assert.match(formatDirection('Skeptic, **check** this', s => s, 40), /Skeptic, check this/);
 });

@@ -1,6 +1,6 @@
 import {BLOCK_DISPLAY_CAP, clampChars, limitNoticeText, systemClock} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
-import {SGR_ATTR, formatElapsed, glyph, paintTone, sliceCells, sliceStyledCells, stringCells, styledCells, truncateCells} from '../kit.js';
+import {SGR_ATTR, formatElapsed, glyph, paintTone, sliceCells, sliceStyledCells, stringCells, styledCells, truncateCells, wrapRows} from '../kit.js';
 import {sgr} from './sgr.js';
 import type {PrintAction, PrintOptions} from '../../../../src/api.js';
 import type {RouteInfo} from '../public.js';
@@ -10,7 +10,7 @@ import {formatToolCard, formatToolGroup, resultLines} from './tool-card.js';
 import type {Scrub} from './tool-args.js';
 import {LIVE, ROUTE_TOOL_NAME, type Out, type Phase, type StatusLine} from './transcript.js';
 import type {Tier} from '../public.js';
-import {PROFILE_TONES, nounOf, type ChatProfile, type ProfileTone} from '../public.js';
+import {DIRECTION_LIMITS, NO_ANSWER_TEXT, PROFILE_TONES, nounOf, type ChatProfile, type ProfileTone} from '../public.js';
 import {turnSummaryRow} from './turn-summary.js';
 
 export {CODE_BLOCK_ROWS};
@@ -106,6 +106,53 @@ export function formatProfileLine(line: ProfileLineView, scrub: Scrub, width?: n
 	}
 	const pad = ' '.repeat(BLOCK_INDENT);
 	return [paintTone(`${SGR_ATTR.bold}${head}`, tone), ...rows.map(r => (r === '' ? '' : `${pad}${r}`))].join('\n');
+}
+
+const FENCE_RE = /^\s*(```|~~~)/u;
+const BLOCK_MARK_RE = /^\s*(#{1,6}\s+|>+\s?|[-*+]\s+|\d+[.)]\s+)/u;
+
+// A stage direction is one plain sentence: markdown markers carry no meaning in a muted aside.
+export function directionPlain(text: string): string {
+	const rows: string[] = [];
+	for (const raw of text.split('\n')) {
+		if (FENCE_RE.test(raw)) continue;
+		let row = raw;
+		for (let prev = ''; prev !== row; ) {
+			prev = row;
+			row = row.replace(BLOCK_MARK_RE, '');
+		}
+		rows.push(row);
+	}
+	return rows
+		.join(' ')
+		.replace(/\[([^\]]*)\]\([^)]*\)/gu, '$1')
+		.replace(/\*\*|__|`/gu, '')
+		.replace(/(^|[\s(])\*([^*\s][^*]*?)\*(?=$|[\s).,;:!?])/gu, '$1$2')
+		.replace(/(^|[\s(])_([^_\s][^_]*?)_(?=$|[\s).,;:!?])/gu, '$1$2')
+		.replace(/\s+/gu, ' ')
+		.trim();
+}
+
+function cutDirection(plain: string, mark: string): string {
+	const points = [...plain];
+	return points.length > DIRECTION_LIMITS.chars ? `${points.slice(0, DIRECTION_LIMITS.chars).join('')}${mark}` : plain;
+}
+
+// The form a direction is saved in: plain, at most DIRECTION_LIMITS.chars + 1 characters.
+export const directionRecordText = (text: string): string => cutDirection(directionPlain(text), '\u2026');
+
+// width is the widest row allowed; at most DIRECTION_LIMITS.rows rows behind a two-cell indent.
+export function formatDirection(text: string, scrub: Scrub, width?: number): string {
+	const ellipsis = glyph('ellipsis');
+	const inner = Math.max(1, Math.floor(width ?? 80) - BLOCK_INDENT);
+	const plain = cutDirection(directionPlain(scrub(clampChars(text, BLOCK_DISPLAY_CAP))), ellipsis);
+	let rows = wrapRows(plain, inner);
+	if (rows.length > DIRECTION_LIMITS.rows) {
+		const keep = DIRECTION_LIMITS.rows - 1;
+		rows = [...rows.slice(0, keep), truncateCells(rows.slice(keep).join(' '), inner, ellipsis)];
+	}
+	const pad = ' '.repeat(BLOCK_INDENT);
+	return paint(sgr().muted, rows.map(r => `${pad}${r}`).join('\n'));
 }
 
 const TYPING_NAMES = 3;
@@ -311,6 +358,10 @@ export function formatOut(out: Out, scrub: Scrub, reveal: Scrub = scrub, width?:
 			const agent = profile && Object.hasOwn(profile.agents, out.agent) ? profile.agents[out.agent] : undefined;
 			return formatProfileLine({label: agent?.label ?? out.agent, tone: agent?.tone ?? 'teal', text: out.text}, scrub, width);
 		}
+		case 'direction':
+			return formatDirection(out.text, scrub, width);
+		case 'no-answer':
+			return formatNotice(NO_ANSWER_TEXT, scrub);
 		case 'audit':
 			return formatAudit(out.entry, scrub, reveal, width, nounOf(profile));
 		case 'mode':

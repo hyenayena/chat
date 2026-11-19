@@ -158,3 +158,39 @@ test('an ordinary chat still draws its agent boxes and no typing row', async () 
 	assert.match(t.frame().join('\n'), /╭/);
 	assert.doesNotMatch(t.frame().join('\n'), /typing…/);
 });
+
+test('with mainText the direction prints before the typing row, records are reported, sent flushes first', async () => {
+	const dirProfile = checkProfile({...profile, mainText: 'direction'});
+	const printed: string[] = [];
+	const records: unknown[] = [];
+	const controller: FakeController = fakeController();
+	const host = {isFocused: () => true, columns: () => COLUMNS, subscribe: () => () => {}, move: () => true, isHostKey: () => false, setTitle: () => {}, subscribeMouse: () => () => {}};
+	const h = mountHarness(
+		createElement(ChatView, {controller, print: t => void printed.push(t), close() {}, scrub: makeScrub(s => s), host, profile: dirProfile, onProfileRecord: r => void records.push(r)}),
+		{columns: COLUMNS, rows: 30},
+	);
+	cleanup.push(() => h.unmount());
+	await h.settle();
+	controller.emit({type: 'sent', text: 'hello'});
+	controller.setState('running');
+	controller.ui({kind: 'text', messageId: 'm', text: 'Skeptic, your view?'});
+	spawn(controller, 'a1', 'skeptic');
+	await h.settle();
+	assert.ok(printed.some(p => p.includes('Skeptic, your view?')), JSON.stringify(printed));
+	const last = [...h.chunks].reverse().find(c => c.replace(SGR, '').trim() !== '') ?? '';
+	assert.match(last.replace(SGR, ''), /Skeptic typing…/);
+	controller.ui({kind: 'agent-message', agentId: 'a1', items: [{type: 'text', text: 'Hm.'}]});
+	controller.ui({kind: 'tool-result', toolUseId: 'a1', isError: false, text: 'Hm.'});
+	controller.emit({type: 'turn-end', outcome: 'ok'});
+	controller.setState('idle');
+	await h.settle();
+	controller.emit({type: 'sent', text: 'again'});
+	controller.setState('running');
+	controller.emit({type: 'turn-end', outcome: 'ok'});
+	controller.setState('idle');
+	await h.settle();
+	assert.deepEqual(records, [{kind: 'direction', text: 'Skeptic, your view?'}, {kind: 'line', agent: 'skeptic', text: 'Hm.'}, {kind: 'silence'}]);
+	assert.ok(printed.some(p => p.includes('No one answered')), 'silence');
+	const user = printed.findIndex(p => p.includes('again'));
+	assert.ok(user > printed.findIndex(p => p.includes('Hm.')), 'order');
+});

@@ -284,12 +284,12 @@ test('a profile with a noun names itself in the activity label and the closing l
 	}
 });
 
-function fakeStore(saved: Array<{n: number; at: number; agent: string; text: string}> = []) {
+function fakeStore(saved: Array<{n: number; at: number; agent: string; text: string} | {n: number; at: number; kind: 'direction'; text: string} | {n: number; at: number; kind: 'silence'}> = []) {
 	const calls: unknown[][] = [];
 	const store = {
 		bind: async (...a: unknown[]) => void calls.push(['bind', ...a]),
 		touch: async (...a: unknown[]) => void calls.push(['touch', ...a]),
-		addLine: async (...a: unknown[]) => void calls.push(['addLine', ...a]),
+		addRecord: async (...a: unknown[]) => void calls.push(['addRecord', ...a]),
 		lines: async () => saved,
 		lookup: async () => undefined,
 		has: async () => false,
@@ -313,12 +313,12 @@ test('a profile chat binds the session once on the session event, touches it on 
 	session.emit({type: 'ui', event: {kind: 'session', sessionId: 'sess-1'}});
 	session.emit({type: 'ui', event: {kind: 'session', sessionId: 'sess-1'}});
 	session.emit({type: 'sent', text: 'hi'});
-	fu.chats[0]!.onProfileLine!({agent: 'skeptic', text: 'Hm.'});
+	fu.chats[0]!.onProfileRecord!({kind: 'line', agent: 'skeptic', text: 'Hm.'});
 	await tick();
 	assert.deepEqual(calls, [
 		['bind', 'sess-1', {id: 'clan', owner: 'clan', noun: 'clan', args: ['skeptic']}],
 		['touch', 'aaaaaaaa-1111'],
-		['addLine', 'aaaaaaaa-1111', {n: 3, agent: 'skeptic', text: 'Hm.'}],
+		['addRecord', 'aaaaaaaa-1111', {n: 3, kind: 'line', agent: 'skeptic', text: 'Hm.'}],
 	]);
 	ctx.closeAll();
 	await done;
@@ -333,7 +333,7 @@ test('a plain chat records nothing', async () => {
 	await tick();
 	f.sessions[0]!.emit({type: 'ui', event: {kind: 'session', sessionId: 's'}});
 	f.sessions[0]!.emit({type: 'sent', text: 'hi'});
-	assert.equal(fu.chats[0]!.onProfileLine, undefined);
+	assert.equal(fu.chats[0]!.onProfileRecord, undefined);
 	assert.deepEqual(calls, []);
 	ctx.closeAll();
 	await done;
@@ -361,6 +361,34 @@ test('a resumed profile chat puts the saved persona lines back after the user me
 	assert.ok(at('U-ONE') < at('FIRST-LINE') && at('FIRST-LINE') < at('A-ONE'));
 	assert.ok(at('A-ONE') < at('U-TWO') && at('U-TWO') < at('SECOND-LINE') && at('SECOND-LINE') < at('A-TWO'));
 	assert.equal(ctx.lines.some(l => l.includes('Earlier agent lines')), false);
+	ctx.closeAll();
+	await done;
+});
+
+test('a resumed direction-mode chat skips assistant history and prints the saved records in file order', async () => {
+	const {store} = fakeStore([
+		{n: 1, at: 1, kind: 'direction', text: 'DIRECTION-ONE'},
+		{n: 1, at: 2, agent: 'skeptic', text: 'LINE-ONE'},
+		{n: 2, at: 3, kind: 'silence'},
+	]);
+	const f = makeProvider({
+		history: async () => [
+			{role: 'user', text: 'U-ONE'},
+			{role: 'assistant', text: 'A-ONE'},
+			{role: 'user', text: 'U-TWO'},
+			{role: 'assistant', text: 'A-TWO'},
+		],
+	});
+	const fu = makeUi();
+	const ctx = makeCtx();
+	const profile = checkProfile({id: 'clan', owner: 'clan', appendSystemPrompt: 'p', mainTools: [], agents: skeptic, mainText: 'direction'});
+	const done = runChatView(f.provider, {origin: 'user', fresh: false, resume: 'sess-1', profile}, ctx, {loadUi: async () => fu.ui, registerAbort: () => () => {}, profiles: store});
+	await tick();
+	const at = (needle: string) => ctx.lines.findIndex(l => l.includes(needle));
+	assert.ok(at('U-ONE') < at('DIRECTION-ONE') && at('DIRECTION-ONE') < at('LINE-ONE') && at('LINE-ONE') < at('U-TWO'));
+	assert.ok(at('U-TWO') < at('No one answered'));
+	assert.equal(at('A-ONE'), -1);
+	assert.equal(at('A-TWO'), -1);
 	ctx.closeAll();
 	await done;
 });

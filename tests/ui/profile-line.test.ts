@@ -93,7 +93,34 @@ test('a pending call with text is flushed on sent and on turn-end; one without t
 	assert.deepEqual(sent.out, [{kind: 'profile-line', agent: 'skeptic', text: 'Late line'}]);
 	const ended = run([spawn('a1', 'skeptic', {run_in_background: true}), ui({kind: 'task', id: 't1', status: 'running', toolUseId: 'a1'}), result('a1', 'launched'), {type: 'turn-end', outcome: 'ok'}]);
 	assert.deepEqual(ended.out, []);
-	assert.equal(ended.state.profile?.calls.size, 0);
+	assert.equal(ended.state.profile?.calls.size, 1);
+	const late = run([...[spawn('a1', 'skeptic', {run_in_background: true}), ui({kind: 'task', id: 't1', status: 'running', toolUseId: 'a1'}), result('a1', 'launched'), {type: 'turn-end', outcome: 'ok'} as ChatEvent], said('a1', 'Late'), ui({kind: 'task', id: 't1', status: 'completed', toolUseId: 'a1'})]);
+	assert.deepEqual(late.out, [{kind: 'profile-line', agent: 'skeptic', text: 'Late'}]);
+});
+
+test('a waiting SendMessage never takes the tool result text as its line', () => {
+	const send = ui({kind: 'tool-use', toolUseId: 's1', name: 'SendMessage', input: {to: 'skeptic', message: 'cue'}});
+	const none = run([send, result('s1', 'Message queued for delivery'), ui({kind: 'task', id: 't1', status: 'running', toolUseId: 's1'}), ui({kind: 'task', id: 't1', status: 'completed', toolUseId: 's1'})]);
+	assert.deepEqual(none.out, []);
+	const said1 = run([send, result('s1', 'Message queued for delivery'), said('s1', 'Real reply'), ui({kind: 'task', id: 't1', status: 'completed', toolUseId: 's1'})]);
+	assert.deepEqual(said1.out.filter(o => o.kind === 'profile-line'), [{kind: 'profile-line', agent: 'skeptic', text: 'Real reply'}]);
+});
+
+test('trackEvent dispatches the UI events of the tracker', async () => {
+	const {newTracker, trackEvent} = await import('../../src/contract/profile-calls.js');
+	let t = newTracker(profile);
+	t = trackEvent(t, {kind: 'tool-use', toolUseId: 'a1', name: 'Agent', input: {subagent_type: 'skeptic'}}).t;
+	t = trackEvent(t, {kind: 'agent-message', agentId: 'a1', items: [{type: 'text', text: 'Hm.'}]}).t;
+	assert.deepEqual(trackEvent(t, {kind: 'text-delta', text: 'x'}), {t, lines: []});
+	const done = trackEvent(t, {kind: 'tool-result', toolUseId: 'a1', isError: false, text: 'x'});
+	assert.deepEqual(done.lines, [{agent: 'skeptic', text: 'Hm.'}]);
+});
+
+test('flushCalls keeps a running background call only with keepWaiting', async () => {
+	const {flushCalls} = await import('../../src/contract/profile-calls.js');
+	const {state} = run([spawn('a1', 'skeptic', {run_in_background: true}), ui({kind: 'task', id: 't1', status: 'running', toolUseId: 'a1'}), result('a1', 'launched')]);
+	assert.equal(flushCalls(state.profile!, {keepWaiting: true}).t.calls.size, 1);
+	assert.equal(flushCalls(state.profile!).t.calls.size, 0);
 });
 
 test('a persona task notice does not print a background task row', () => {
@@ -133,7 +160,7 @@ test('formatOut paints the persona with the label and tone of the profile', () =
 });
 
 test('isProfileEvent and pendingPersonas follow the tracked calls', async () => {
-	const {isProfileEvent, pendingPersonas} = await import('../../src/ui/profile-calls.js');
+	const {isProfileEvent, pendingPersonas} = await import('../../src/contract/profile-calls.js');
 	const {state} = run([spawn('a1', 'skeptic'), spawn('a2', 'dreamer'), spawn('a3', 'skeptic'), spawn('x1', 'Explore')]);
 	const t = state.profile!;
 	assert.deepEqual(pendingPersonas(t), ['skeptic', 'dreamer']);

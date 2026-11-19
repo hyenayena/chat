@@ -13,6 +13,7 @@ export * from './contract/scrub.js';
 export * from './contract/reveal.js';
 export * from './contract/provider.js';
 export * from './contract/profile.js';
+export {newTracker, trackEvent, dropCalls, pendingPersonas, type ProfileTracker, type ProfileLine} from './contract/profile-calls.js';
 export {openProfileChat, registerChatProfile, profileSessions, resumeProfileChat} from './profiles.js';
 export * from './contract/validate.js';
 export {chatProvider, chatProviders, registerChatProvider} from './registry.js';

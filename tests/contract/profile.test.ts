@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {capNoun, checkProfile, isPassReply, nounOf, PROFILE_LIMITS, PROFILE_TONES, type ChatProfile} from '../../src/public.js';
+import {DIRECTION_LIMITS, NO_ANSWER_TEXT, capNoun, checkProfile, isPassReply, nounOf, PROFILE_LIMITS, PROFILE_TONES, type ChatProfile} from '../../src/public.js';
 
 const agent = () => ({description: 'A doubter', prompt: 'You doubt.', label: 'Skeptic', tone: 'orange' as const});
 const base = (): ChatProfile => ({
@@ -105,4 +105,17 @@ test('args: at most 16 opaque names of lowercase letters, digits and dashes', ()
 	bad(p => (p.args = ['a'.repeat(65)]), 'args');
 	bad(p => (p.args = [1]), 'args');
 	bad(p => (p.args = Array.from({length: PROFILE_LIMITS.args + 1}, () => 'a')), 'args');
+});
+
+test('mainText and agentInput accept only their one value and are copied frozen', () => {
+	const p = checkProfile({...base(), mainText: 'direction', agentInput: 'turn'});
+	assert.equal(p.mainText, 'direction');
+	assert.equal(p.agentInput, 'turn');
+	assert.ok(Object.isFrozen(p));
+	assert.equal('mainText' in checkProfile(base()), false);
+	bad(p => (p.mainText = 'text'), 'mainText');
+	bad(p => (p.mainText = true), 'mainText');
+	bad(p => (p.agentInput = 'all'), 'agentInput');
+	assert.deepEqual(DIRECTION_LIMITS, {chars: 200, rows: 2, buffer: 2048});
+	assert.equal(NO_ANSWER_TEXT, 'No one answered');
 });

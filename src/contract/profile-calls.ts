@@ -1,7 +1,7 @@
-import type {ChatProfile} from '../contract/profile.js';
-import {isPassReply} from '../contract/profile.js';
-import type {UiEvent} from '../contract/events.js';
-import {SPAWN_TOOLS} from '../contract/tools.js';
+import type {ChatProfile} from './profile.js';
+import {isPassReply} from './profile.js';
+import type {UiEvent} from './events.js';
+import {SPAWN_TOOLS} from './tools.js';
 
 export const PROFILE_TEXT_CAP = 16 * 1024;
 const MAP_CAP = 128;
@@ -131,22 +131,46 @@ export function trackResult(t: ProfileTracker, e: Extract<UiEvent, {kind: 'tool-
 		return {t: n, lines: [], hide: false};
 	}
 	const lines: ProfileLine[] = [];
-	if (call.running && call.waits) n.calls.set(e.toolUseId, {...call, resulted: true});
-	else finish(n, e.toolUseId, lines, e.text.slice(0, PROFILE_TEXT_CAP));
+	if (call.waits) {
+		n.calls.set(e.toolUseId, {...call, resulted: true});
+		if (!call.running && (call.text !== undefined || call.summary !== undefined)) finish(n, e.toolUseId, lines);
+	} else finish(n, e.toolUseId, lines, e.text.slice(0, PROFILE_TEXT_CAP));
 	return {t: n, lines, hide: true};
 }
 
-export function flushCalls(t: ProfileTracker): Step {
+export function flushCalls(t: ProfileTracker, opts: {keepWaiting?: boolean} = {}): Step {
 	if (t.calls.size === 0) return {t, lines: []};
 	const n = clone(t);
 	const lines: ProfileLine[] = [];
 	const ids = [...n.calls.entries()].sort((a, b) => a[1].order - b[1].order).map(([id]) => id);
 	for (const id of ids) {
 		const call = n.calls.get(id)!;
-		if (call.text === undefined && call.summary === undefined) n.calls.delete(id);
-		else finish(n, id, lines);
+		if (call.text === undefined && call.summary === undefined) {
+			if (!(opts.keepWaiting && call.waits && call.running)) n.calls.delete(id);
+		} else finish(n, id, lines);
 	}
 	return {t: n, lines};
+}
+
+export const hasWaiting = (t: ProfileTracker): boolean => [...t.calls.values()].some(c => c.waits && c.running);
+
+export function trackEvent(t: ProfileTracker, e: UiEvent): Step {
+	switch (e.kind) {
+		case 'tool-use':
+			return {t: trackUse(t, e), lines: []};
+		case 'agent-message':
+			return {t: trackAgentMessage(t, e), lines: []};
+		case 'task': {
+			const r = trackTask(t, e);
+			return {t: r.t, lines: r.lines};
+		}
+		case 'tool-result': {
+			const r = trackResult(t, e);
+			return {t: r.t, lines: r.lines};
+		}
+		default:
+			return {t, lines: []};
+	}
 }
 
 // Calls still waiting for their line, in call order, one entry per agent.

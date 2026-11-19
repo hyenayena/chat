@@ -13,7 +13,7 @@ import {headerLayout, liveLayout, promptBudget, viewerHeight} from './chat-layou
 import {createAgentStore} from './agent-store.js';
 import {agentViewLines} from './agent-view.js';
 import {focusAgent, hiddenBoxOf, hideBoxes, initialAgents, reconcileAgents, reduceAgents, seedFromTasks} from './agents.js';
-import {isProfileBox, isProfileId, pendingPersonas} from './profile-calls.js';
+import {isProfileBox, isProfileId, pendingPersonas} from '../contract/profile-calls.js';
 import {ChatHeader} from './ChatHeader.js';
 import {tidyBlock} from './print-block.js';
 import {createStore} from './store.js';
@@ -28,6 +28,7 @@ import {
 	formatNotice,
 	formatWarning,
 	assistantPrint,
+	directionRecordText,
 	formatOut,
 	formatUserLine,
 	liveTail,
@@ -55,8 +56,11 @@ import {
 	markInterrupting,
 	reduceTranscript,
 	setNotice,
+	type Out,
 	type TranscriptState,
 } from './transcript.js';
+
+export type ProfileRecord = {kind: 'line'; agent: string; text: string} | {kind: 'direction'; text: string} | {kind: 'silence'};
 
 export interface ChatViewProps {
 	controller: ChatController;
@@ -64,7 +68,7 @@ export interface ChatViewProps {
 	close: () => void;
 	scrub: Scrub;
 	profile?: ChatProfile;
-	onProfileLine?: (line: {agent: string; text: string}) => void;
+	onProfileRecord?: (record: ProfileRecord) => void;
 	initialModel?: string;
 	initialSessionId?: string;
 	initialAccount?: string;
@@ -365,7 +369,49 @@ export function ChatView(props: ChatViewProps) {
 			if (event.type === 'turn-end' || event.type === 'sent' || event.type === 'state' || (event.type === 'ui' && event.event.kind === 'task')) {
 				reconcileNow();
 			}
+			const printOuts = (outs: Out[]): void => {
+				for (const out of outs) {
+					if (out.kind === 'blank') continue;
+					if (out.kind === 'limit-notice') {
+						print(formatWarning(limitNoticeText(out.info, clock), scrub));
+						continue;
+					}
+					if (out.kind === 'turn-summary') {
+						print(formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile), {render: w => formatOut(out, scrub, reveal, w, props.profile)});
+						continue;
+					}
+					if (out.kind === 'assistant') {
+						beatRef.current++;
+						const width = lastWidthRef.current > 1 ? lastWidthRef.current - 1 : undefined;
+						const block = assistantPrint(out.text, scrub, {interrupted: out.interrupted, width, copyLabel: true});
+						print(block.text, block.options);
+						continue;
+					}
+					if (out.kind === 'profile-line' || out.kind === 'direction' || out.kind === 'no-answer') {
+						props.onProfileRecord?.(out.kind === 'profile-line' ? {kind: 'line', agent: out.agent, text: out.text} : out.kind === 'direction' ? {kind: 'direction', text: directionRecordText(out.text)} : {kind: 'silence'});
+					}
+					if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'audit' || out.kind === 'route-block' || out.kind === 'profile-line' || out.kind === 'direction' || out.kind === 'no-answer') {
+						if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'profile-line') beatRef.current++;
+						const width = lastWidthRef.current > 1 ? lastWidthRef.current - 1 : undefined;
+						const text = formatOut(out, scrub, reveal, width, props.profile);
+						const options: PrintOptions = {render: w => formatOut(out, scrub, reveal, w, props.profile)};
+						if (out.kind === 'audit') printNotice(text, options);
+						else print(text, options);
+						continue;
+					}
+					if (out.kind === 'plan-note' && out.notes.some(n => n.kind === 'done')) {
+						const last = out.notes.filter(n => n.kind === 'done').at(-1);
+						if (last?.kind === 'done') planStore.set({...planStore.get(), flash: {text: last.text, until: Date.now() + PLAN.flashMs}});
+					}
+					const text = formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile);
+					if (out.kind === 'mode' || out.kind === 'account' || out.kind === 'route') printNotice(text);
+					else print(text);
+				}
+			};
 			if (event.type === 'sent') {
+				const sentStep = reduceTranscript(tRef.current, event);
+				setT(sentStep.state);
+				printOuts(sentStep.out);
 				print(formatUserLine(event.text, scrub));
 				return;
 			}
@@ -386,40 +432,7 @@ export function ChatView(props: ChatViewProps) {
 			setT(event.type === 'turn-end' ? {...step.state, notice: undefined} : step.state);
 			if (event.type === 'turn-end') refreshBranch();
 			if (event.type === 'ui' && event.event.kind === 'rate-limit') armLimitReset(event.event.info);
-			for (const out of step.out) {
-				if (out.kind === 'blank') continue;
-				if (out.kind === 'limit-notice') {
-					print(formatWarning(limitNoticeText(out.info, clock), scrub));
-					continue;
-				}
-				if (out.kind === 'turn-summary') {
-					print(formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile), {render: w => formatOut(out, scrub, reveal, w, props.profile)});
-					continue;
-				}
-				if (out.kind === 'assistant') {
-					beatRef.current++;
-					const width = lastWidthRef.current > 1 ? lastWidthRef.current - 1 : undefined;
-					const block = assistantPrint(out.text, scrub, {interrupted: out.interrupted, width, copyLabel: true});
-					print(block.text, block.options);
-					continue;
-				}
-				if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'audit' || out.kind === 'route-block' || out.kind === 'profile-line') {
-					if (out.kind === 'tool' || out.kind === 'tool-group' || out.kind === 'profile-line') beatRef.current++;
-					const width = lastWidthRef.current > 1 ? lastWidthRef.current - 1 : undefined;
-					const text = formatOut(out, scrub, reveal, width, props.profile);
-					const options: PrintOptions = {render: w => formatOut(out, scrub, reveal, w, props.profile)};
-					if (out.kind === 'audit') printNotice(text, options);
-					else print(text, options);
-					continue;
-				}
-				if (out.kind === 'plan-note' && out.notes.some(n => n.kind === 'done')) {
-					const last = out.notes.filter(n => n.kind === 'done').at(-1);
-					if (last?.kind === 'done') planStore.set({...planStore.get(), flash: {text: last.text, until: Date.now() + PLAN.flashMs}});
-				}
-				const text = formatOut(out, scrub, reveal, lastWidthRef.current || undefined, props.profile);
-				if (out.kind === 'mode' || out.kind === 'account' || out.kind === 'route') printNotice(text);
-				else print(text);
-			}
+			printOuts(step.out);
 			if (event.type === 'turn-end' && queueRef.current.length > 0) {
 				if (event.outcome === 'interrupted' || event.outcome === 'limit' || event.outcome === 'context') {
 					const back = queueRef.current.join('\n\n');

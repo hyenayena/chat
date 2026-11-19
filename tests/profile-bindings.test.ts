@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, readdirSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {afterEach, test} from 'node:test';
@@ -107,7 +107,7 @@ test('lines are appended in order with 0600, only for a bound session, and read 
 	await s.addLine('s-1', {n: 2, agent: 'Bad Agent', text: 'refused'});
 	assert.equal(mode(path.join(dir, LINES_DIR)), 0o700);
 	assert.equal(mode(path.join(dir, LINES_DIR, 's-1.jsonl')), 0o600);
-	assert.deepEqual((await s.lines('s-1')).map(l => [l.n, l.agent, l.text]), [[1, 'skeptic', 'one'], [2, 'dreamer', 'two']]);
+	assert.deepEqual((await s.lines('s-1')).map(l => [l.n, 'agent' in l ? l.agent : l.kind, 'text' in l ? l.text : '']), [[1, 'skeptic', 'one'], [2, 'dreamer', 'two']]);
 });
 
 test('lines are capped by count and by size, oldest dropped', async () => {
@@ -116,10 +116,25 @@ test('lines are capped by count and by size, oldest dropped', async () => {
 	for (let i = 0; i < MAX_LINES + 5; i++) await s.addLine('s-1', {n: i, agent: 'skeptic', text: `l${i}`});
 	const lines = await s.lines('s-1');
 	assert.equal(lines.length, MAX_LINES);
-	assert.equal(lines[0]!.text, 'l5');
+	assert.equal('text' in lines[0]! && lines[0].text, 'l5');
 	const big = 'x'.repeat(300 * 1024);
 	for (let i = 0; i < 5; i++) await s.addLine('s-1', {n: 900 + i, agent: 'skeptic', text: big});
 	const after = await s.lines('s-1');
 	assert.ok(after.reduce((n, l) => n + Buffer.byteLength(JSON.stringify(l)) + 1, 0) <= MAX_LINES_BYTES);
 	assert.equal(after.at(-1)!.n, 904);
+});
+
+test('direction and silence records round-trip with the lines in file order; a bad kind is skipped', async () => {
+	const dir = fresh();
+	const s = createProfileStore({dataDir: dir});
+	await s.bind('s-1', b);
+	await s.addRecord('s-1', {n: 1, kind: 'direction', text: 'Skeptic, go.'});
+	await s.addRecord('s-1', {n: 1, kind: 'line', agent: 'skeptic', text: 'Hm.'});
+	await s.addRecord('s-1', {n: 1, kind: 'silence'});
+	await s.addRecord('s-1', {n: 1, kind: 'direction', text: ' '});
+	await s.addRecord('s-1', {n: 1, kind: 'direction', text: 'x'.repeat(202)});
+	appendFileSync(path.join(dir, LINES_DIR, 's-1.jsonl'), `${JSON.stringify({n: 2, at: 1, kind: 'weird', text: 'x'})}\n${JSON.stringify({n: 2, at: 1, kind: 'direction', text: 'y'.repeat(300)})}\n`);
+	const got = await s.lines('s-1');
+	assert.deepEqual(got.map(r => ('kind' in r ? r.kind : r.agent)), ['direction', 'skeptic', 'silence']);
+	assert.equal('text' in got[0]! && got[0].text, 'Skeptic, go.');
 });

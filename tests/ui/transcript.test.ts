@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import {test} from 'node:test';
+import {describe, test} from 'node:test';
 import type {ChatEvent, RateLimitInfo, UiEvent} from '../../src/public.js';
 import type {ToolRequest} from '../../src/public.js';
+import {checkProfile} from '../../src/public.js';
 import {initialTranscript, reduceTranscript, resetTranscript, type Out, type TranscriptState} from '../../src/ui/transcript.js';
 
 const ui = (event: UiEvent): ChatEvent => ({type: 'ui', event});
@@ -406,4 +407,94 @@ test('a background task that failed on the usage limit prints the limit label', 
 		event: {kind: 'task', id: 't', status: 'failed', background: true, description: 'Coder', summary: "You've hit your session limit · resets 6:10pm (UTC) (HTTP 429)"},
 	});
 	assert.deepEqual(step.out, [{kind: 'task', status: 'failed', description: 'Coder', summary: 'stopped: usage limit, resets 6:10pm (UTC)'}]);
+});
+
+describe('direction mode', () => {
+	const agents = {skeptic: {description: 'd', prompt: 'p', label: 'Skeptic', tone: 'orange' as const}, dreamer: {description: 'd', prompt: 'p', label: 'Dreamer', tone: 'violet' as const}};
+	const mk = (extra: Record<string, unknown>) => checkProfile({id: 'clan', owner: 'clan', appendSystemPrompt: 'p', mainTools: ['Agent', 'SendMessage'], agents, passWord: 'PASS', ...extra});
+	const dir = mk({mainText: 'direction'});
+	const plain = mk({});
+	const go = (events: ChatEvent[], profile = dir) => {
+		let state = initialTranscript({profile});
+		const out: Out[] = [];
+		for (const e of events) {
+			const step = reduceTranscript(state, e);
+			state = step.state;
+			out.push(...step.out);
+		}
+		return {state, out};
+	};
+	const text = (t: string): ChatEvent => ui({kind: 'text', messageId: 'm', text: t});
+	const spawn = (id: string, type: string, extra: Record<string, unknown> = {}): ChatEvent =>
+		ui({kind: 'tool-use', toolUseId: id, name: 'Agent', input: {subagent_type: type, prompt: 'cue', ...extra}});
+	const said = (agentId: string, t: string): ChatEvent => ui({kind: 'agent-message', agentId, items: [{type: 'text', text: t}]});
+	const done = (id: string, t = 'x'): ChatEvent => ui({kind: 'tool-result', toolUseId: id, isError: false, text: t});
+	const sent: ChatEvent = {type: 'sent', text: 'hi'};
+	const end: ChatEvent = {type: 'turn-end', outcome: 'ok'};
+	const kinds = (out: Out[]) => out.map(o => o.kind);
+
+	test('text before a profile Agent call becomes a direction ahead of the call; no liveRaw, no assistant Out', () => {
+		const r = go([sent, ui({kind: 'text-delta', text: 'Skeptic, '}), text('Skeptic, your view?'), spawn('a1', 'skeptic'), said('a1', 'Hm.'), done('a1')]);
+		assert.deepEqual(r.out, [{kind: 'direction', text: 'Skeptic, your view?'}, {kind: 'profile-line', agent: 'skeptic', text: 'Hm.'}]);
+		assert.equal(r.state.liveRaw, '');
+		assert.equal(r.state.turnPrintedText, false);
+		const sm = go([sent, text('Dreamer next.'), ui({kind: 'tool-use', toolUseId: 's1', name: 'SendMessage', input: {to: 'dreamer', message: 'm'}})]);
+		assert.deepEqual(sm.out, [{kind: 'direction', text: 'Dreamer next.'}]);
+	});
+
+	test('trailing text after the persona lines is dropped; a direction between two personas is kept', () => {
+		const r = go([sent, text('One.'), spawn('a1', 'skeptic'), said('a1', 'A'), done('a1'), text('Two.'), spawn('a2', 'dreamer'), said('a2', 'B'), done('a2'), text('Closing words'), end]);
+		assert.deepEqual(kinds(r.out), ['direction', 'profile-line', 'direction', 'profile-line']);
+		assert.equal(r.state.direction?.buffer, '');
+	});
+
+	test('text before an ordinary tool is not a direction', () => {
+		const r = go([sent, text('Reading.'), ui({kind: 'tool-use', toolUseId: 'r1', name: 'Read', input: {}}), spawn('a1', 'skeptic'), said('a1', 'A'), done('a1')]);
+		assert.deepEqual(r.out[0], {kind: 'direction', text: 'Reading.'});
+	});
+
+	test('an interrupt drops the buffer and says nothing more', () => {
+		const r = go([sent, text('Half'), {type: 'turn-end', outcome: 'interrupted'}]);
+		assert.equal(r.state.direction?.buffer, '');
+		assert.ok(!kinds(r.out).includes('no-answer') && !kinds(r.out).includes('direction'));
+		assert.equal(r.state.exchange?.open, false);
+	});
+
+	test('no-answer: no call, only PASS, or an error result', () => {
+		assert.deepEqual(kinds(go([sent, text('Anyone?'), end]).out), ['no-answer']);
+		const pass = go([sent, spawn('a1', 'skeptic'), said('a1', 'PASS'), done('a1'), end]);
+		assert.ok(kinds(pass.out).includes('no-answer'));
+		const err = go([sent, spawn('a1', 'skeptic'), ui({kind: 'tool-result', toolUseId: 'a1', isError: true, text: 'boom'}), end]);
+		assert.ok(kinds(err.out).includes('no-answer'));
+		const order = go([sent, ui({kind: 'text-delta', text: 'x'}), text('x'), {type: 'turn-end', outcome: 'error', error: 'bad'}]);
+		assert.deepEqual(kinds(order.out), ['no-answer', 'outcome', 'blank']);
+	});
+
+	test('no no-answer when a line came, outside an exchange, or after an interrupt', () => {
+		assert.ok(!kinds(go([sent, spawn('a1', 'skeptic'), said('a1', 'A'), done('a1'), end]).out).includes('no-answer'));
+		assert.deepEqual(kinds(go([text('background'), end]).out), []);
+		assert.deepEqual(kinds(go([sent, {type: 'turn-end', outcome: 'interrupted'}]).out).filter(k => k === 'no-answer'), []);
+	});
+
+	test('no-answer waits for a background call, then follows the CLI turn after it', () => {
+		const bg = [sent, spawn('a1', 'skeptic', {run_in_background: true}), ui({kind: 'task', id: 't1', status: 'running', toolUseId: 'a1'}), done('a1', 'launched'), end];
+		const waiting = go(bg);
+		assert.ok(!kinds(waiting.out).includes('no-answer'));
+		assert.equal(waiting.state.exchange?.open, true);
+		const withLine = go([...bg, said('a1', 'Late'), ui({kind: 'task', id: 't1', status: 'completed', toolUseId: 'a1'}), end]);
+		assert.deepEqual(kinds(withLine.out), ['profile-line']);
+		const passed = go([...bg, said('a1', 'PASS'), ui({kind: 'task', id: 't1', status: 'completed', toolUseId: 'a1'}), end]);
+		assert.deepEqual(kinds(passed.out), ['no-answer']);
+	});
+
+	test('a profile without mainText and an ordinary chat are unchanged', () => {
+		const r = go([sent, ui({kind: 'text-delta', text: 'Hi'}), end], plain);
+		assert.equal(r.state.direction, undefined);
+		assert.equal(r.state.exchange, undefined);
+		assert.deepEqual(kinds(r.out), ['assistant', 'blank']);
+		const t = go([sent, text('Hello'), spawn('a1', 'skeptic'), end], plain);
+		assert.deepEqual(kinds(t.out), ['assistant', 'blank']);
+		const chat = run([text('Hello'), end]);
+		assert.deepEqual(chat.out.map(o => o.kind), ['assistant', 'blank']);
+	});
 });

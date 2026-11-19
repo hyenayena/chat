@@ -21,6 +21,7 @@ export const chatGallerySection: GallerySection = {
 				p.formatToolBlock({name: 'Edit', input: {file_path: 'src/parse.ts', old_string: 'return rows[0];', new_string: 'return rows.at(0) ?? "";'}, isError: false, text: '', patch}, scrub, width),
 				p.formatToolBlock({name: 'Bash', input: {command: 'npm test'}, isError: true, text: '1 test failed'}, scrub, width),
 				p.formatProfileLine({label: 'Skeptic', tone: 'orange', text: 'Wait, **who** checked that this is faster?'}, scrub, width),
+				p.formatDirection('Skeptic, **check** this claim: is the new parser really faster, or only on small inputs?', scrub, width),
 				p.formatNotice('Notice: the model is unchanged', scrub),
 				p.formatWarning('Warning: the session is almost full', scrub),
 				p.formatError('The request failed', scrub),

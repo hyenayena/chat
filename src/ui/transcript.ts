@@ -2,10 +2,10 @@ import type {AccountReason, ChatEvent, RouteInfo, ToolPatch, TurnOutcome, UiEven
 import type {RateLimitInfo} from '../public.js';
 import {PLAN_TOOLS, limitNoticeKey, planChanges, usageLimitLabel, type PlanItem, type PlanNote} from '../public.js';
 import type {AuditEntry, ChatMode} from '../public.js';
-import type {ChatProfile, Tier} from '../public.js';
+import {DIRECTION_LIMITS, type ChatProfile, type Tier} from '../public.js';
 import type {TurnSummary} from '../public.js';
 import {isFoldable} from './tool-kind.js';
-import {dropCalls, flushCalls, isProfileId, newTracker, trackAgentMessage, trackResult, trackTask, trackUse, type ProfileLine, type ProfileTracker} from './profile-calls.js';
+import {dropCalls, flushCalls, hasWaiting, isProfileId, newTracker, personaOfCall, trackAgentMessage, trackResult, trackTask, trackUse, type ProfileLine, type ProfileTracker} from '../contract/profile-calls.js';
 import {showSummary} from './turn-summary.js';
 
 export const LIVE = {
@@ -62,6 +62,8 @@ export interface TranscriptState {
 	account?: string;
 	lastSummary?: TurnSummary;
 	profile?: ProfileTracker;
+	direction?: {on: true; buffer: string};
+	exchange?: {open: boolean; lines: number};
 }
 
 export type ToolOut = {
@@ -93,6 +95,8 @@ export type Out =
 	| {kind: 'route-block'; route: RouteInfo; previous?: Tier}
 	| {kind: 'route'; pinned?: Tier}
 	| {kind: 'profile-line'; agent: string; text: string}
+	| {kind: 'direction'; text: string}
+	| {kind: 'no-answer'}
 	| {kind: 'blank'};
 
 const LIMIT_NOTICES_KEPT = 8;
@@ -127,6 +131,7 @@ export function initialTranscript(
 		mode: init.mode ?? 'default',
 		approvals: 0,
 		...(init.profile && {profile: newTracker(init.profile)}),
+		...(init.profile?.mainText === 'direction' && {direction: {on: true as const, buffer: ''}, exchange: {open: false, lines: 0}}),
 	};
 }
 
@@ -144,11 +149,13 @@ export function resetTranscript(state: TranscriptState): TranscriptState {
 		...initialTranscript({model: state.model, mode: state.mode, ...(state.account !== undefined && {account: state.account})}),
 		phase: state.phase,
 		...(state.profile && {profile: {...state.profile, calls: new Map(), persona: new Map(), taskCall: new Map()}}),
+		...(state.direction && {direction: {on: true as const, buffer: ''}, exchange: {open: false, lines: 0}}),
 		...(state.limit !== undefined && {limit: state.limit}),
 	};
 }
 
 function flushPartial(state: TranscriptState): Step {
+	if (state.direction) return {state: {...state, liveRaw: ''}, out: []};
 	if (state.liveRaw.trim() === '') return {state: {...state, liveRaw: ''}, out: []};
 	return {
 		state: {...state, liveRaw: '', turnPrintedText: true},
@@ -307,15 +314,32 @@ export function reduceTranscript(state: TranscriptState, event: ChatEvent): Step
 	return {state: {...step.state, fold}, out};
 }
 
+function appendDirection(buffer: string, text: string): string {
+	const joined = buffer === '' ? text : `${buffer} ${text}`;
+	return joined.length > DIRECTION_LIMITS.buffer ? joined.slice(-DIRECTION_LIMITS.buffer) : joined;
+}
+
 const lineOuts = (lines: ProfileLine[]): Out[] => lines.map(l => ({kind: 'profile-line', agent: l.agent, text: l.text}));
 
 function reduceUiProfile(state: TranscriptState, e: UiEvent): Step {
 	const t = state.profile;
 	if (!t) return reduceUi(state, e);
+	const dir = state.direction;
+	if (dir && e.kind === 'text-delta') return {state: {...state, status: null}, out: []};
+	if (dir && e.kind === 'text') {
+		const buffer = e.aborted === true ? dir.buffer : appendDirection(dir.buffer, e.text);
+		return {state: {...state, status: null, direction: {on: true, buffer}}, out: []};
+	}
 	const step = reduceUi(state, e);
 	switch (e.kind) {
-		case 'tool-use':
-			return {...step, state: {...step.state, profile: trackUse(t, e)}};
+		case 'tool-use': {
+			const text = dir?.buffer.trim() ?? '';
+			const spoke = dir !== undefined && personaOfCall(t, e.input, e.name) !== undefined;
+			return {
+				state: {...step.state, profile: trackUse(t, e), ...(spoke && {direction: {on: true as const, buffer: ''}})},
+				out: spoke && text !== '' ? [{kind: 'direction', text}, ...step.out] : step.out,
+			};
+		}
 		case 'agent-message':
 			return {...step, state: {...step.state, profile: trackAgentMessage(t, e)}};
 		case 'task': {
@@ -332,12 +356,33 @@ function reduceUiProfile(state: TranscriptState, e: UiEvent): Step {
 }
 
 function reduceEvent(state: TranscriptState, event: ChatEvent): Step {
-	const step = reduceEventBase(state, event);
-	const t = step.state.profile;
-	if (!t || (event.type !== 'sent' && event.type !== 'turn-end')) return step;
-	if (event.type === 'turn-end' && event.outcome === 'interrupted') return {...step, state: {...step.state, profile: dropCalls(t)}};
-	const flushed = flushCalls(t);
-	return {state: {...step.state, profile: flushed.t}, out: [...lineOuts(flushed.lines), ...step.out]};
+	const base = reduceEventBase(state, event);
+	const t = base.state.profile;
+	if (!t) return base;
+	let step = base;
+	const counted = step.state.exchange;
+	if (counted) {
+		const lines = step.out.filter(o => o.kind === 'profile-line').length;
+		if (lines > 0) step = {...step, state: {...step.state, exchange: {...counted, lines: counted.lines + lines}}};
+	}
+	if (event.type !== 'sent' && event.type !== 'turn-end') return step;
+	const cleared = step.state.direction ? {direction: {on: true as const, buffer: ''}} : {};
+	if (event.type === 'turn-end' && event.outcome === 'interrupted') {
+		return {...step, state: {...step.state, ...cleared, profile: dropCalls(step.state.profile ?? t), ...(step.state.exchange && {exchange: {open: false, lines: 0}})}};
+	}
+	const flushed = flushCalls(step.state.profile ?? t, {keepWaiting: true});
+	const out: Out[] = lineOuts(flushed.lines);
+	const exchange = step.state.exchange;
+	let next = exchange;
+	if (event.type === 'sent') {
+		if (exchange) next = {open: true, lines: 0};
+	} else if (exchange) {
+		const lines = exchange.lines + flushed.lines.length;
+		const waiting = hasWaiting(flushed.t);
+		if (exchange.open && !waiting && lines === 0) out.push({kind: 'no-answer'});
+		next = waiting ? {open: exchange.open, lines} : {open: false, lines};
+	}
+	return {state: {...step.state, ...cleared, profile: flushed.t, ...(next && {exchange: next})}, out: [...out, ...step.out]};
 }
 
 function reduceEventBase(state: TranscriptState, event: ChatEvent): Step {
