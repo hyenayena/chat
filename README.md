@@ -6,7 +6,7 @@ It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/ins
 
 ## Commands (`src/commands.ts`)
 
-`chat [subcommand] [args…]` (`agent: deny`, autostart). Without a subcommand it opens a new chat that attaches to a background chat when one runs. The own subcommands, with their policies:
+`chat [subcommand] [args…]` (`agent: deny`, autostart). Without a subcommand it opens a new chat that attaches to a background chat when one runs. After a `reload` typed in the chat or run by its assistant, the next bare `chat` reopens the same session (a profile chat included) once; if it cannot, it opens a new chat with a notice. The own subcommands, with their policies:
 
 - `deny`: `new [--provider <id>] [model]`, `continue`, `ask [--new] <text…>`, `resume [session]`, `rewind`, `fork`, `copy [n]`.
 - `confirm`: `start [--provider <id>] <message…>` (20 000 characters at most), `send <message…>`, `rename <name…>`, `export [file]`, `stop [session]`.

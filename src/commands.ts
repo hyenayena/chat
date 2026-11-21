@@ -1,7 +1,7 @@
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import type {ArgumentDoc, Command, CommandContext, DevFailure, Logger, SettingsTab, SpanTone, StyledSpan, Subcommand} from '../../../src/api.js';
-import {line, printStyled, span} from './kit.js';
+import type {ArgumentDoc, Command, CommandContext, DevFailure, EventBus, Logger, SettingsTab, SpanTone, StyledSpan, Subcommand} from '../../../src/api.js';
+import {line, printStyled, RELOAD_TOPIC, readReload, span} from './kit.js';
 import {isInteractive, type ChatProvider, type OpenedChat, type Origin, type ProviderCommand, type RunningInfo} from './contract/provider.js';
 import {makeScrub} from './contract/scrub.js';
 import {usageLines} from './contract/usage.js';
@@ -10,7 +10,8 @@ import {createFixCommand} from './fix.js';
 import {createChatHub, sendRefused, type ChatHub, type HeldChat} from './hub.js';
 import {errClass, noopLog} from './log.js';
 import {setModulePoster} from './module-messages.js';
-import {originOf} from './origin.js';
+import {isAssistantCaller, originOf} from './origin.js';
+import {createReloadResume, type ReloadResumeEntry} from './reload-resume.js';
 import {checkProfile, nounOf, type ChatProfile, type ProfileSessionInfo} from './contract/profile.js';
 import {createProfileStore, MAX_BINDINGS, SESSION_ID_RE} from './profile-bindings.js';
 import {resolveProfile, setProfileOpener, setProfileSessions} from './profiles.js';
@@ -24,6 +25,7 @@ import type {PickerItem} from './ui/picker-model.js';
 export type ChatCommandDeps = {
 	dataDir: string;
 	log?: Logger;
+	events?: EventBus;
 	devFailure?: () => Promise<DevFailure | undefined>;
 	flow?: Omit<FlowDeps, 'onOpened' | 'onMount' | 'onInbox' | 'inputMode'>;
 };
@@ -176,10 +178,23 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		flow: () => ({...deps.flow, log, profiles, inputMode: () => (prefs.cached().inputMode === 'vim' ? 'vim' : 'normal')}),
 	});
 
+	const resumeStore = createReloadResume({dataDir: deps.dataDir, log});
+
 	const openSession = (): OpenedChat | undefined => {
 		const opened = hub.current?.opened;
 		return opened && opened.session.state !== 'closed' ? opened : undefined;
 	};
+
+	deps.events?.on(RELOAD_TOPIC, payload => {
+		const n = readReload(payload);
+		const held = hub.current;
+		const opened = openSession();
+		if (!n || !held || !opened) return;
+		const fromChat = (n.via === 'view' && n.view === 'main') || (n.via === 'bridge' && isAssistantCaller(n.caller));
+		const sessionId = opened.session.sessionId;
+		if (!fromChat || sessionId === undefined || !SESSION_ID_RE.test(sessionId)) return;
+		resumeStore.record({provider: held.provider.id, sessionId, mode: opened.session.mode});
+	});
 
 	const providerById = (id: string): ChatProvider => {
 		const found = chatProvider(id);
@@ -222,14 +237,14 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		admit.call(held.opened, origin);
 	};
 
-	const newChat = async (args: string[], ctx: CommandContext, attach: boolean): Promise<void> => {
+	const newChat = async (args: string[], ctx: CommandContext, attach: boolean, notice?: string): Promise<void> => {
 		remember(ctx);
 		const {id, rest} = takeProvider(args);
 		if (rest.length > 1) throw new Error(NEW_USAGE);
 		const provider = await requested(id);
 		const model = rest[0];
 		if (model !== undefined && !provider.validModel(model)) throw new Error(`Invalid model "${plain(model).slice(0, 100)}". ${NEW_USAGE}`);
-		await hub.replaceChat(provider, {origin: originOf(ctx), fresh: true, attach, ...(model !== undefined && {model}), ...(await prefsFor(provider))}, ctx);
+		await hub.replaceChat(provider, {origin: originOf(ctx), fresh: true, attach, ...(notice !== undefined && {notice}), ...(model !== undefined && {model}), ...(await prefsFor(provider))}, ctx);
 	};
 
 	const openProfile = async (profile: ChatProfile, ctx: CommandContext): Promise<void> => {
@@ -271,6 +286,37 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		if (provider.profiles !== true) throw new Error(`The chat provider "${plain(provider.id).slice(0, 32)}" does not support module profiles`);
 		log.info('profile chat resume requested', {profile: profile.id, session8: sessionId.slice(0, 8)});
 		await hub.replaceChat(provider, {origin, fresh: false, resume: sessionId, attach: false, keep: false, mode: 'default', profile}, ctx);
+	};
+
+	const reopenAfterReload = async (entry: ReloadResumeEntry, ctx: CommandContext): Promise<void> => {
+		const isProfile = await profiles.has(entry.sessionId);
+		if (isProfile) await resumeProfile(entry.sessionId, ctx);
+		else {
+			const provider = chatProvider(entry.provider) ?? (await defaultProvider());
+			if ((await provider.title(entry.sessionId).catch(() => undefined)) === undefined) throw new Error('Session not found');
+			const mode = entry.mode !== undefined ? provider.modes.find(m => m === entry.mode) : undefined;
+			await hub.replaceChat(
+				provider,
+				{origin: originOf(ctx), fresh: false, resume: entry.sessionId, attach: true, ...(await prefsFor(provider)), ...(mode !== undefined && {mode})},
+				ctx,
+			);
+		}
+		log.info('chat reopened after reload', {session8: entry.sessionId.slice(0, 8), profile: isProfile});
+	};
+
+	let startChecked = false;
+	const openAtStart = async (ctx: CommandContext): Promise<void> => {
+		if (startChecked || ctx.signal || ctx.headless || !ctx.mount) return newChat([], ctx, true);
+		startChecked = true;
+		remember(ctx);
+		const entry = await resumeStore.take();
+		if (!entry) return newChat([], ctx, true);
+		try {
+			await reopenAfterReload(entry, ctx);
+		} catch (err) {
+			log.warn('chat not reopened after reload', {errClass: errClass(err)});
+			await newChat([], ctx, true, 'Could not reopen the chat after reload; this is a new chat.');
+		}
 	};
 
 	const sessionsOf = async (id: string, limit: number): Promise<ProfileSessionInfo[]> => {
@@ -671,7 +717,7 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 		run: async ([sub, ...args], ctx) => {
 			switch (sub) {
 				case undefined:
-					return newChat([], ctx, true);
+					return openAtStart(ctx);
 				case 'new':
 					return newChat(args, ctx, false);
 				case 'continue':

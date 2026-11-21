@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {originOf} from '../src/origin.js';
+import {isAssistantCaller, originOf} from '../src/origin.js';
 import {isInteractive, type Origin} from '../src/public.js';
 import {makeCtx} from './helpers/fake-ctx.js';
 import {openChat, run, setup, tick} from './helpers/env.js';
@@ -11,6 +11,10 @@ test('originOf: no signal is the user, the yena caller is the assistant, anythin
 	assert.equal(originOf({signal: new AbortController().signal, caller: 'yena'}), 'assistant');
 	assert.equal(originOf({signal: new AbortController().signal, caller: 'scheduler'}), 'unattended');
 	assert.equal(originOf({signal: new AbortController().signal}), 'unattended');
+});
+
+test('isAssistantCaller is true only for the yena caller', () => {
+	assert.deepEqual(["yena", 'scheduler', '', undefined, 5].map(isAssistantCaller), [true, false, false, false, false]);
 });
 
 test('only the user and the assistant are interactive; module and unknown values are not', () => {

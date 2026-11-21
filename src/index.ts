@@ -28,7 +28,7 @@ const plugin: ModulePlugin = host => {
 	setModuleSessionLog(log);
 	setActivityEvents(host.events);
 	registerGallery(log);
-	return createChatCommands({dataDir: host.dataDir, log, ...(host.devFailure && {devFailure: host.devFailure}), flow: host.build ? {build: host.build} : {}});
+	return createChatCommands({dataDir: host.dataDir, log, events: host.events, ...(host.devFailure && {devFailure: host.devFailure}), flow: host.build ? {build: host.build} : {}});
 };
 
 export default plugin;

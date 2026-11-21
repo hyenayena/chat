@@ -1,15 +1,15 @@
 {
 	"name": "chat",
-	"version": "0.7.2",
+	"version": "0.7.3",
 	"description": "Provider-neutral chat: the chat contract and the chat UI",
 	"runtime": "node",
 	"entry": "src/index.ts",
 	"install": "bin/install",
-	"export": {"deny": []},
+	"export": {"deny": ["reload-resume.json"]},
 	"dependencies": {
 		"core": {
 			"source": "core",
-			"version": "^0.23.1"
+			"version": "^0.23.4"
 		}
 	}
 }

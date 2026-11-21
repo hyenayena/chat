@@ -78,6 +78,19 @@ test('a new chat prints the banner, a resumed one replays the history instead', 
 	await r.done;
 });
 
+test('a notice prints after the banner and never reaches the provider', async () => {
+	const plain = await flow();
+	const plainLines = plain.ctx.lines.length;
+	plain.ctx.closeAll();
+	await plain.done;
+	const r = await flow({}, {notice: 'Could not reopen it'});
+	assert.equal(r.ctx.lines.length, plainLines + 1);
+	assert.match(r.ctx.lines.at(-1)!, /Could not reopen it/);
+	assert.equal('notice' in r.f.opens[0]!, false);
+	r.ctx.closeAll();
+	await r.done;
+});
+
 test('a fork replays the history of the source but does not claim its session id', async () => {
 	const r = await flow({history: async () => [{role: 'user', text: 'q'}]}, {fresh: false, resume: 'src', fork: true});
 	assert.equal(r.fu.chats[0]!.initialSessionId, undefined);

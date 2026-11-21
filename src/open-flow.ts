@@ -22,7 +22,7 @@ export type ChatUi = ChatUiHelpers & {
 	createWaitingElement: (props: WaitingViewProps) => UiElement;
 };
 
-export type FlowRequest = OpenRequest & {send?: string};
+export type FlowRequest = OpenRequest & {send?: string; notice?: string};
 
 export type FlowDeps = {
 	log?: Logger;
@@ -76,7 +76,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	const mount = ctx.mount;
 	const log = deps.log ?? noopLog;
 	const ui = await loadUiChecked(deps.loadUi ?? loadChatUi, log);
-	const {send, ...openReq} = req;
+	const {send, notice, ...openReq} = req;
 
 	const env: OpenEnv = {
 		print: text => ctx.print(text),
@@ -257,6 +257,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 			printHistory(banner(chatHost?.columns() || 80), {render: banner});
 		}
 		if (req.profile?.banner && printHistory) printHistory(formatNotice(req.profile.banner, scrub));
+		if (notice && printHistory) printHistory(formatNotice(notice, scrub));
 		if (opened.reattached && printHistory) {
 			printHistory(formatNotice(`Reattached to a session working since ${clockTime(opened.reattached.startedAt)}`, scrub));
 		}
