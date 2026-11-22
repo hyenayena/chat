@@ -351,6 +351,16 @@ test('toolBodyRows shows the resolved target only when it differs, revealed', ()
 	assert.ok(!text(linked).includes('\u001b'));
 });
 
+test('toolBodyRows for a Read or Grep ask shows the path, the pattern and the content warning', () => {
+	const text = (r: ToolRequest) => toolBodyRows(r, s => s, 80).map(x => x.text).join('\n');
+	const read = toolReq({toolName: 'Read', path: '/w/app/.env.local', input: {file_path: '/w/app/.env.local'}, always: false});
+	assert.match(text(read), /Path: \/w\/app\/\.env\.local/);
+	assert.match(text(read), /content goes into the conversation/);
+	const grep = toolReq({toolName: 'Grep', path: '/w/app', input: {pattern: 'token', path: '/w/app'}, always: false});
+	assert.match(text(grep), /Path: \/w\/app/);
+	assert.match(text(grep), /Pattern: token/);
+});
+
 test('blind mode (nothing reviewable on screen) only refuses', () => {
 	const req = toolReq();
 	const s = fresh();

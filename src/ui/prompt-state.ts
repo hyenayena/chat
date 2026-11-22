@@ -481,6 +481,11 @@ export function toolBodyRows(req: ToolRequest, reveal: Reveal, width: number): B
 		if (plan) for (const line of reveal(plan).split('\n')) pushWrapped(rows, line, 'plain', width);
 		else rows.push({text: 'The plan is in the answer above.', tone: 'dim'});
 		rows.push({text: 'No: yena keeps planning (say why in the reason).', tone: 'dim'});
+	} else if (req.toolName === 'Read' || req.toolName === 'Grep') {
+		pushWrapped(rows, `Path: ${reveal(req.path ?? String(req.input['file_path'] ?? req.input['path'] ?? ''))}`, 'plain', width);
+		const pattern = req.toolName === 'Grep' && typeof req.input['pattern'] === 'string' ? req.input['pattern'] : '';
+		if (pattern) pushWrapped(rows, `Pattern: ${reveal(pattern)}`, 'dim', width);
+		rows.push({text: "The file's content goes into the conversation (and to the model provider).", tone: 'warn'});
 	} else if (req.toolName === 'WebFetch') {
 		pushWrapped(rows, `URL: ${reveal(String(req.input['url'] ?? ''))}`, 'plain', width);
 		const ask = typeof req.input['prompt'] === 'string' ? req.input['prompt'] : '';

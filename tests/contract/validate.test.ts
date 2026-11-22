@@ -40,6 +40,21 @@ test('a permission request is validated and rebuilt', () => {
 	bad(broken);
 });
 
+test('a Read or Grep permission request is read; other tool names still are not', () => {
+	for (const toolName of ['Read', 'Grep'] as const) {
+		same({
+			type: 'permission-requested',
+			pending: 1,
+			request: {kind: 'tool', id: 'p1', seq: 1, toolName, input: {file_path: '/app/a'}, cwd: '/app', path: '/app/a', highlights: [], defaultToNo: false, always: false, oversize: false},
+		});
+	}
+	bad({
+		type: 'permission-requested',
+		pending: 1,
+		request: {kind: 'tool', id: 'p1', seq: 1, toolName: 'Glob', input: {}, cwd: '/app', highlights: [], defaultToNo: false, always: false, oversize: false},
+	});
+});
+
 test('an account change event is read; an unknown reason is not', () => {
 	same({type: 'account', account: 'spare', previous: 'work', reason: 'changed'});
 	bad({type: 'account', account: 'spare', previous: 'work', reason: 'other'});

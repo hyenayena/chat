@@ -31,7 +31,7 @@ export type ToolRequest = {
 	kind: 'tool';
 	id: string;
 	seq: number;
-	toolName: 'Bash' | 'Edit' | 'Write' | 'WebFetch' | 'ExitPlanMode' | 'Mcp' | 'Command';
+	toolName: 'Bash' | 'Edit' | 'Write' | 'Read' | 'Grep' | 'WebFetch' | 'ExitPlanMode' | 'Mcp' | 'Command';
 	input: Record<string, unknown>;
 	cwd: string;
 	path?: string;

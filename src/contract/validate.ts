@@ -46,7 +46,7 @@ const OUTCOMES = ['ok', 'error', 'interrupted', 'timeout', 'max-turns', 'limit',
 const LIMIT_TYPES = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'seven_day_overage_included', 'overage'] as const;
 const TASK_STATUSES = ['running', 'completed', 'failed', 'stopped'] as const;
 const CAUSES = ['aborted', 'interrupted', 'closed', 'timeout', 'replaced'] as const;
-const TOOL_NAMES = ['Bash', 'Edit', 'Write', 'WebFetch', 'ExitPlanMode', 'Mcp', 'Command'] as const;
+const TOOL_NAMES = ['Bash', 'Edit', 'Write', 'Read', 'Grep', 'WebFetch', 'ExitPlanMode', 'Mcp', 'Command'] as const;
 const AUDIT_OUTCOMES = [
 	'allowed',
 	'auto-accepted',
