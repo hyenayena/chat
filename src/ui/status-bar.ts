@@ -37,6 +37,7 @@ export type StatusOptions = {frame: string; ascii?: boolean; depth?: ColorDepth;
 
 export const SHIMMER_WIDTH = 3;
 export const SHIMMER_PAUSE = 12;
+export const SHIMMER_STEP_MS = 80;
 
 // A bold band in the default foreground runs over the text and rests between passes; `at` is a step counter.
 export function shimmer(text: string, tone: ThemeTone, at: number | undefined, depth: ColorDepth): string {

@@ -276,7 +276,7 @@ test('tiny terminal does not crash and keeps the status bar', async () => {
 	await t.settle(60);
 	const frame = t.lastFrame();
 	assert.ok(frame.split('\n').length < 6);
-	assert.match(frame, /Whooping|0\.0s/, 'the status bar stays');
+	assert.match(stripStyles(frame), /Whooping|\d+\.\ds/, 'the status bar stays');
 	assert.doesNotMatch(frame, /tools? running/, 'the running tools are hidden below 12 rows');
 });
 
