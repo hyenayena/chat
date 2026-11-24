@@ -30,9 +30,14 @@ function env(opts: FakeOptions[] = [], files: Record<string, string> = {}) {
 	return {dataDir, fakes, log, prefs: createPrefs({dataDir, log}), file: path.join(dataDir, 'prefs.json')};
 }
 
+test('bannerAnimation accepts a boolean only', () => {
+	assert.deepEqual(parsePrefs({v: 1, bannerAnimation: false}), {bannerAnimation: false});
+	assert.equal(parsePrefs({v: 1, bannerAnimation: 0}), undefined);
+});
+
 test('parsePrefs accepts the planned shape and refuses wrong versions and values', () => {
 	assert.deepEqual(parsePrefs({v: 1, permissionMode: 'plan', inputMode: 'vim', keepRunning: true, provider: 'claude', extra: 1}), {permissionMode: 'plan', inputMode: 'vim', keepRunning: true, provider: 'claude'});
-	for (const bad of [null, [], {}, {v: 2}, {v: 1, permissionMode: 'default'}, {v: 1, inputMode: 'emacs'}, {v: 1, keepRunning: 'on'}, {v: 1, provider: ''}, {v: 1, provider: 5}]) {
+	for (const bad of [null, [], {}, {v: 2}, {v: 1, permissionMode: 'default'}, {v: 1, inputMode: 'emacs'}, {v: 1, keepRunning: 'on'}, {v: 1, bannerAnimation: 'off'}, {v: 1, provider: ''}, {v: 1, provider: 5}]) {
 		assert.equal(parsePrefs(bad), undefined, JSON.stringify(bad));
 	}
 });

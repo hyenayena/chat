@@ -10,6 +10,8 @@ test('the UI entry exposes exactly the stable names', async () => {
 	assert.deepEqual(Object.keys(ui).sort(), [
 		'assistantPrint',
 		'assistantRows',
+		'bannerAnimates',
+		'createBannerIntro',
 		'createChatElement',
 		'createPermissionElement',
 		'createPickerElement',

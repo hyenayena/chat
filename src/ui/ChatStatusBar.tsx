@@ -1,5 +1,6 @@
 import React, {useMemo, useRef} from 'react';
 import {Text} from 'ink';
+import {SPINNER} from '../kit.js';
 import {useSpinner} from './kit.js';
 import {pickWorkingVerb} from './present.js';
 import {chatStatusRow, type StatusInput} from './status-bar.js';
@@ -22,7 +23,7 @@ export function ChatStatusBar({pending, since, beat = 0, lastEventAt, columns, n
 	const row = chatStatusRow(
 		{...input, awaiting: pending > 0, elapsedMs: Math.max(0, t - since), quietMs: lastEventAt === undefined || pending > 0 ? 0 : Math.max(0, t - lastEventAt), verb},
 		Math.max(1, columns - 1),
-		{frame},
+		{frame, ...(running && {glint: Math.floor(t / SPINNER.intervalMs)})},
 	);
 	return <Text wrap="truncate">{row}</Text>;
 }

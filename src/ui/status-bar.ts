@@ -1,5 +1,5 @@
 import type {ChatMode, ContextInfo} from '../public.js';
-import {colorDepth, formatElapsed, glyph, meterBar, paintTone, sanitizeText, segmentBar, truncateCells, type BarSegment, type ColorDepth, type ThemeTone} from '../kit.js';
+import {SGR_ATTR, colorDepth, formatElapsed, glyph, meterBar, paintTone, sanitizeText, segmentBar, truncateCells, type BarSegment, type ColorDepth, type ThemeTone} from '../kit.js';
 import {QUIET_NOTICE_S, modeBadge, routeBarText, statusLineText, tasksBarText} from './present.js';
 import type {Phase, StatusLine} from './transcript.js';
 import {formatTokens} from './turn-summary.js';
@@ -33,7 +33,22 @@ export type StatusInput = {
 	scrub: Scrub;
 };
 
-export type StatusOptions = {frame: string; ascii?: boolean; depth?: ColorDepth};
+export type StatusOptions = {frame: string; ascii?: boolean; depth?: ColorDepth; glint?: number};
+
+export const SHIMMER_WIDTH = 3;
+export const SHIMMER_PAUSE = 12;
+
+// A bold band in the default foreground runs over the text and rests between passes; `at` is a step counter.
+export function shimmer(text: string, tone: ThemeTone, at: number | undefined, depth: ColorDepth): string {
+	const chars = Array.from(text);
+	if (at === undefined || depth === 'none' || chars.length === 0) return paintTone(text, tone, depth);
+	const cycle = chars.length + SHIMMER_WIDTH + SHIMMER_PAUSE;
+	const end = ((Math.trunc(at) % cycle) + cycle) % cycle;
+	const from = Math.max(0, Math.min(chars.length, end - SHIMMER_WIDTH));
+	const to = Math.max(0, Math.min(chars.length, end));
+	const band = chars.slice(from, to).join('');
+	return paintTone(chars.slice(0, from).join(''), tone, depth) + (band === '' ? '' : `${SGR_ATTR.bold}${band}${SGR_ATTR.reset}`) + paintTone(chars.slice(to).join(''), tone, depth);
+}
 
 const clean = (text: string, scrub: Scrub): string => truncateCells(sanitizeText(scrub(text), 200).replace(/\s+/g, ' '), NAME_CELLS);
 
@@ -72,7 +87,7 @@ export function activitySegment(input: StatusInput, o: StatusOptions): BarSegmen
 	const status = input.status;
 	const what = !status || status.kind === 'thinking' ? `${input.verb}…` : statusLineText(status) || 'Working…';
 	const elapsed = formatElapsed(input.elapsedMs);
-	const head = paint(`${o.frame} ${what} ${elapsed}`, 'running');
+	const head = shimmer(`${o.frame} ${what} ${elapsed}`, 'running', o.glint, depth);
 	const tokens = status?.kind === 'thinking' ? status.tokens : status?.kind === 'tool-input' && status.chars > 0 ? status.chars / 4 : undefined;
 	const quiet = input.quietMs >= QUIET_NOTICE_S * 1000 ? paint(`no response ${formatElapsed(input.quietMs)}`, 'warn') : undefined;
 	const extra = (...parts: (string | undefined)[]): string => parts.filter((p): p is string => p !== undefined).map(p => ` ${paint('·', 'muted')} ${p}`).join('');

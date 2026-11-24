@@ -17,6 +17,10 @@ const KEEP_OPTIONS: SettingOption[] = [
 	{value: '', label: 'Off'},
 	{value: 'on', label: 'On', description: 'the chat finishes its work after you leave yena'},
 ];
+const BANNER_OPTIONS: SettingOption[] = [
+	{value: '', label: 'On', description: 'the paw steps in when a new chat opens'},
+	{value: 'off', label: 'Off', description: 'the banner shows at once'},
+];
 
 const APPLIES = (newOnly: boolean): string => (newOnly ? 'applies to new chats' : 'applies now and to new chats');
 
@@ -83,6 +87,18 @@ export function chatTab(hooks: ChatTabHooks): SettingsTab {
 				await prefs.update({keepRunning: value === 'on' ? true : undefined});
 				logged('keepRunning', value);
 				hooks.applyKeep?.(value === 'on');
+			},
+		},
+		{
+			key: 'bannerAnimation',
+			label: 'Banner animation',
+			description: `Animate the paw on the banner of a new chat; ${APPLIES(true)}`,
+			options: BANNER_OPTIONS,
+			get: async () => ((await prefs.load()).bannerAnimation === false ? 'off' : ''),
+			set: async value => {
+				known(BANNER_OPTIONS, value);
+				await prefs.update({bannerAnimation: value === 'off' ? false : undefined});
+				logged('bannerAnimation', value);
 			},
 		},
 		{

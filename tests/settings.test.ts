@@ -10,15 +10,27 @@ import {makeProvider} from './helpers/fake-provider.js';
 const tab = (env: ReturnType<typeof setup>): SettingsTab => env.chat.settings!;
 const row = (t: SettingsTab, key: string) => t.settings.find(s => s.key === key)!;
 
-test('the Chat tab has the four rows, and its options follow the default provider', async () => {
+test('the Chat tab has the five rows, and its options follow the default provider', async () => {
 	const env = setup({modes: ['default', 'acceptEdits']});
 	const t = tab(env);
 	assert.equal(t.title, 'Chat');
-	assert.deepEqual(t.settings.map(s => s.key), ['permissionMode', 'inputMode', 'keepRunning', 'provider']);
+	assert.deepEqual(t.settings.map(s => s.key), ['permissionMode', 'inputMode', 'keepRunning', 'bannerAnimation', 'provider']);
 	assert.deepEqual(row(t, 'permissionMode').options.map(o => o.value), ['', 'acceptEdits']);
 	assert.deepEqual(row(t, 'provider').options.map(o => o.value), ['', 'fake']);
 	cleanup.push(registerChatProvider(makeProvider({id: 'other', label: 'Other'}).provider)!);
 	assert.deepEqual(row(tab(env), 'provider').options.map(o => o.label), ['First installed', 'Fake Chat', 'Other']);
+});
+
+test('the banner animation is on by default, off stores false and on removes the key', async () => {
+	const env = setup({modes: ['default']});
+	const t = tab(env);
+	assert.equal(await row(t, 'bannerAnimation').get(), '');
+	await row(t, 'bannerAnimation').set('off');
+	assert.deepEqual(JSON.parse(readFileSync(path.join(env.dataDir, 'prefs.json'), 'utf8')), {v: 1, bannerAnimation: false});
+	assert.equal(await row(t, 'bannerAnimation').get(), 'off');
+	await row(t, 'bannerAnimation').set('');
+	assert.deepEqual(JSON.parse(readFileSync(path.join(env.dataDir, 'prefs.json'), 'utf8')), {v: 1});
+	await assert.rejects(async () => row(t, 'bannerAnimation').set('maybe'));
 });
 
 test('setting values are stored in prefs.json and read back', async () => {

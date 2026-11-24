@@ -1,5 +1,5 @@
 import type {UiElement} from '../../../../src/api.js';
-import {assistantPrint, assistantRows, formatBanner, formatDirection, formatFileCard, formatNotice, formatProfileLine, formatUserLine, listProjectFiles} from '../../src/public-ui.js';
+import {assistantPrint, assistantRows, bannerAnimates, createBannerIntro, formatBanner, formatDirection, formatFileCard, formatNotice, formatProfileLine, formatUserLine, listProjectFiles} from '../../src/public-ui.js';
 import type {ChatViewProps, ListPickerProps, WaitingViewProps} from '../../src/public-ui.js';
 import type {ChatUi} from '../../src/open-flow.js';
 
@@ -22,6 +22,8 @@ export function makeUi(): FakeUi {
 			assistantPrint,
 			assistantRows,
 			formatBanner,
+			bannerAnimates,
+			createBannerIntro,
 			formatFileCard,
 			formatNotice,
 			formatDirection,

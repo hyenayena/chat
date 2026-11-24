@@ -12,6 +12,30 @@ export const MASCOT = [
 	'    ╚══════════╝',
 ];
 
+export const PAW_STEPS = 4;
+
+export const PAW_PARTS: readonly string[] = [
+	'     2222 3333',
+	'1111 2222 3333 4444',
+	'1111 2222 3333 4444',
+	'1111  pppppppp 4444',
+	'    pppppppppppp',
+	'    pppppppppppp',
+];
+
+export function pawFrame(step: number): string[] {
+	const k = Math.min(Math.max(Math.trunc(step), 0), PAW_STEPS);
+	return MASCOT.map((row, i) => {
+		const parts = PAW_PARTS[i] ?? '';
+		let out = '';
+		for (let c = 0; c < row.length; c++) {
+			const part = parts[c] ?? ' ';
+			out += part === 'p' || (part !== ' ' && Number(part) <= k) ? row[c] : ' ';
+		}
+		return out;
+	});
+}
+
 export const WORDMARK = [
 	'██╗   ██╗███████╗███╗   ██╗ █████╗',
 	'╚██╗ ██╔╝██╔════╝████╗  ██║██╔══██╗',
@@ -98,14 +122,42 @@ const truncateRow = (row: Row, width: number): Row => {
 	});
 };
 
-export function formatBanner(info: BannerInfo, scrub: Scrub): string {
+const logoFor = (inner: number): readonly string[] => LOGOS.find(l => blockWidth(l) <= inner)!;
+const innerOf = (columns: number): number => Math.min(Math.max(columns, 0), MAX_WIDTH) - 4;
+
+export function bannerAnimates(columns: number): boolean {
+	const inner = innerOf(columns);
+	return inner >= PLAIN_LOGO.length && logoFor(inner).length > 1;
+}
+
+const GLINT_WIDTH = 3;
+// Terminal cells are about twice as tall as wide, so a row shifts the band by two cells to keep it diagonal.
+const GLINT_SLANT = 2;
+
+function glintRow(text: string, row: number, at: number, base: string, shine: string): Segment[] {
+	const from = Math.max(0, Math.min(text.length, at - row * GLINT_SLANT));
+	const to = Math.max(0, Math.min(text.length, at - row * GLINT_SLANT + GLINT_WIDTH));
+	return [
+		{text: text.slice(0, from), style: base},
+		{text: text.slice(from, to), style: shine},
+		{text: text.slice(to), style: base},
+	].filter(s => s.text !== '');
+}
+
+export function formatBanner(info: BannerInfo, scrub: Scrub, opts?: {pawStep?: number; glint?: number}): string {
 	const sg = sgr();
-	const width = Math.min(Math.max(info.columns, 0), MAX_WIDTH);
-	const inner = width - 4;
+	const inner = innerOf(info.columns);
 	if (inner < PLAIN_LOGO.length) return '';
-	const logo = LOGOS.find(l => blockWidth(l) <= inner)!;
+	const logo = logoFor(inner);
+	const step = opts?.pawStep;
+	const paw = step === undefined || step >= PAW_STEPS || logo.length === 1 ? undefined : pawFrame(step);
+	const shown = paw ? logo.map((l, i) => paw[i]! + l.slice(paw[i]!.length)) : logo;
 	const logoWidth = blockWidth(logo);
 	const logoStyle = logo.length === 1 ? sg.bold + sg.running : sg.running;
+	const glint = paw || logo.length === 1 || opts?.glint === undefined ? undefined : Math.min(Math.max(opts.glint, 0), 1);
+	const span = logoWidth + (logo.length - 1) * GLINT_SLANT + GLINT_WIDTH;
+	const logoRow = (text: string, i: number): Segment[] =>
+		glint === undefined ? [{text, style: logoStyle}] : glintRow(text, i, Math.round(glint * span) - GLINT_WIDTH, logoStyle, sg.bold);
 
 	const rightWidth = inner - logoWidth - INFO_GAP.length;
 	const side = rightWidth > 0 ? infoLines(info, scrub, rightWidth, sg) : {rows: [], complete: false};
@@ -115,12 +167,12 @@ export function formatBanner(info: BannerInfo, scrub: Scrub): string {
 	let rows: Row[];
 	if (fitsRight) {
 		const top = Math.floor((logo.length - right.length) / 2);
-		rows = logo.map((l, i) => {
+		rows = shown.map((l, i) => {
 			const side = right[i - top];
-			return side ? [{text: padTo(l, logoWidth), style: logoStyle}, {text: INFO_GAP}, ...side] : [{text: l, style: logoStyle}];
+			return side ? [...logoRow(padTo(l, logoWidth), i), {text: INFO_GAP}, ...side] : logoRow(l, i);
 		});
 	} else {
-		rows = [...logo.map(l => [{text: l, style: logoStyle}]), [], ...infoLines(info, scrub, inner, sg).rows.map(r => truncateRow(r, inner))];
+		rows = [...shown.map(logoRow), [], ...infoLines(info, scrub, inner, sg).rows.map(r => truncateRow(r, inner))];
 	}
 
 	const border = (s: string): string => `${sg.muted}${s}${sg.reset}`;

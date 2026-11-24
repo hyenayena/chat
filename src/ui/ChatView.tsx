@@ -46,6 +46,9 @@ import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
 import {useViewHost, useTerminalSize} from './kit.js';
+import {liveRowCap} from '../kit.js';
+import {BannerIntro} from './BannerIntro.js';
+import type {BannerIntro as BannerIntroController} from './banner-intro.js';
 import {preloadHighlighter} from './highlight.js';
 import {mouseHost, validEvent, type ViewMouseEvent} from './view-mouse.js';
 import {vimKey, vimStart, type VimEffect, type VimState} from './vim.js';
@@ -86,6 +89,7 @@ export interface ChatViewProps {
 	armMs?: number;
 	host?: ViewHost;
 	clock?: Clock;
+	intro?: BannerIntroController;
 }
 
 export const BUSY_HINT = 'Wait for the answer or press Esc to interrupt';
@@ -149,23 +153,25 @@ export function ChatView(props: ChatViewProps) {
 	const gapRef = useRef(true);
 	const print = useCallback(
 		(text: string, options?: PrintOptions) => {
+			props.intro?.finish();
 			const block = tidyBlock(text, options);
 			if (!block) return;
 			if (gapRef.current) printRaw(' ');
 			printRaw(block.text, block.options);
 			gapRef.current = true;
 		},
-		[printRaw],
+		[printRaw, props.intro],
 	);
 	const printNotice = useCallback(
 		(text: string, options?: PrintOptions) => {
+			props.intro?.finish();
 			const block = tidyBlock(text, options);
 			if (!block) return;
 			if (gapRef.current) printRaw(' ');
 			printRaw(block.text, block.options);
 			gapRef.current = false;
 		},
-		[printRaw],
+		[printRaw, props.intro],
 	);
 	const sinceRef = useRef(Date.now());
 	const branchRef = useRef<string | undefined>(undefined);
@@ -1017,6 +1023,7 @@ export function ChatView(props: ChatViewProps) {
 
 	useInput((input: string, key: Key) => {
 		if (closedRef.current) return;
+		props.intro?.finish();
 		if (host?.isHostKey(input, key)) return;
 		const prompt = currentPrompt();
 		if (prompt) return promptKey(prompt, input, key);
@@ -1138,6 +1145,7 @@ export function ChatView(props: ChatViewProps) {
 
 	usePaste((text: string) => {
 		if (closedRef.current) return;
+		props.intro?.finish();
 		if (host?.isHostKey(text)) return;
 		const prompt = currentPrompt();
 		if (prompt) return promptPaste(prompt, text);
@@ -1311,6 +1319,7 @@ export function ChatView(props: ChatViewProps) {
 		tail: wantedTail,
 		typing: typing ? 1 : 0,
 	});
+	const introMax = Math.max(0, liveRowCap(rows) - header.height - live.input - live.rules - live.vim - live.notice - 1);
 	const inputRows = live.input;
 	const noticeRows = live.notice;
 	const mentionRows = mention ? live.menu : 0;
@@ -1327,6 +1336,7 @@ export function ChatView(props: ChatViewProps) {
 	return (
 		<Box flexDirection="column">
 			{fallbackPanel}
+			{props.intro?.active() && <BannerIntro intro={props.intro} columns={columns} maxRows={introMax} />}
 			{tail.map((line, i) => (
 				<Text key={i} wrap="truncate">
 					{line === '' ? ' ' : line}

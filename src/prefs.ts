@@ -5,7 +5,7 @@ import type {ChatProvider, LegacyChatPrefs} from './contract/provider.js';
 import {errClass, noopLog} from './log.js';
 import {chatProvider, chatProviders} from './registry.js';
 
-export type ChatPrefs = {permissionMode?: 'acceptEdits' | 'plan' | 'auto'; inputMode?: 'vim'; keepRunning?: boolean; provider?: string};
+export type ChatPrefs = {permissionMode?: 'acceptEdits' | 'plan' | 'auto'; inputMode?: 'vim'; keepRunning?: boolean; bannerAnimation?: boolean; provider?: string};
 
 export const PREFS_FILE = 'prefs.json';
 const PROVIDER_MAX = 40;
@@ -15,7 +15,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 export function parsePrefs(raw: unknown): ChatPrefs | undefined {
 	if (!isObject(raw) || raw['v'] !== 1) return undefined;
 	const out: ChatPrefs = {};
-	const {permissionMode, inputMode, keepRunning, provider} = raw;
+	const {permissionMode, inputMode, keepRunning, bannerAnimation, provider} = raw;
 	if (permissionMode !== undefined) {
 		if (permissionMode !== 'acceptEdits' && permissionMode !== 'plan' && permissionMode !== 'auto') return undefined;
 		out.permissionMode = permissionMode;
@@ -27,6 +27,10 @@ export function parsePrefs(raw: unknown): ChatPrefs | undefined {
 	if (keepRunning !== undefined) {
 		if (typeof keepRunning !== 'boolean') return undefined;
 		out.keepRunning = keepRunning;
+	}
+	if (bannerAnimation !== undefined) {
+		if (typeof bannerAnimation !== 'boolean') return undefined;
+		out.bannerAnimation = bannerAnimation;
 	}
 	if (provider !== undefined) {
 		if (typeof provider !== 'string' || provider === '' || provider.length > PROVIDER_MAX) return undefined;

@@ -3,7 +3,8 @@ import {test} from 'node:test';
 import React from 'react';
 void React;
 import {setActivityEvents} from '../src/activity.js';
-import {loadUiChecked, NEEDS_MOUNT_MESSAGE, runChatView, UI_MISSING_MESSAGE} from '../src/open-flow.js';
+import {withColorDepth, type ColorDepth} from '../src/kit.js';
+import {bannerAnimationOn, loadUiChecked, NEEDS_MOUNT_MESSAGE, runChatView, UI_MISSING_MESSAGE} from '../src/open-flow.js';
 import {checkProfile, makeScrub} from '../src/public.js';
 import {makeFakeLog} from './helpers/fake-log.js';
 import {makeCtx} from './helpers/fake-ctx.js';
@@ -404,4 +405,78 @@ test('a resumed direction-mode chat skips assistant history and prints the saved
 	assert.equal(at('A-TWO'), -1);
 	ctx.closeAll();
 	await done;
+});
+
+test('the banner animation needs the pref, a colour depth, a terminal and no headless run', () => {
+	const on = {pref: true, depth: '16' as ColorDepth, tty: true, headless: false};
+	assert.equal(bannerAnimationOn(on), true);
+	assert.equal(bannerAnimationOn({...on, pref: false}), false);
+	assert.equal(bannerAnimationOn({...on, depth: 'none'}), false);
+	assert.equal(bannerAnimationOn({...on, tty: false}), false);
+	assert.equal(bannerAnimationOn({...on, headless: true}), false);
+});
+
+async function animated(opts: {depth?: ColorDepth; pref?: boolean; tty?: boolean} = {}, popts: Parameters<typeof makeProvider>[0] = {}, req: Partial<Parameters<typeof runChatView>[1]> = {}) {
+	const f = makeProvider(popts);
+	const fu = makeUi();
+	const ctx = makeCtx();
+	const realMount = ctx.mount!;
+	ctx.mount = build => withColorDepth(opts.depth ?? '16', () => realMount(control => build({...control, host: {columns: () => 120} as never})));
+	const done = runChatView(f.provider, {origin: 'user', fresh: true, ...req}, ctx, {
+		loadUi: async () => fu.ui,
+		log: makeFakeLog(),
+		registerAbort: () => () => {},
+		isTTY: () => opts.tty ?? true,
+		bannerAnimation: () => opts.pref ?? true,
+	});
+	await tick();
+	return {fu, ctx, done};
+}
+
+test('an animated new chat prints nothing until the intro finishes, then the banner and the notices in order', async () => {
+	const r = await animated({}, {}, {notice: 'Could not reopen it', profile: clanProfile as never});
+	const intro = r.fu.chats[0]!.intro!;
+	assert.ok(intro);
+	assert.equal(intro.active(), true);
+	assert.deepEqual(r.ctx.lines, []);
+	intro.finish();
+	assert.equal(r.ctx.lines.length, 3);
+	assert.match(r.ctx.lines[0]!, /yena/);
+	assert.match(r.ctx.lines[1]!, /The clan is here/);
+	assert.match(r.ctx.lines[2]!, /Could not reopen it/);
+	r.ctx.closeAll();
+	await r.done;
+});
+
+test('closing the view while the intro runs still prints the banner', async () => {
+	const r = await animated();
+	r.fu.chats[0]!.close();
+	await r.done;
+	assert.match(r.ctx.lines[0]!, /yena/);
+});
+
+test('no intro for a resumed chat, a reattached chat, no colour, pref off or no terminal', async () => {
+	const cases = [
+		await animated({}, {history: async () => []}, {fresh: false, resume: 'sess-1'}),
+		await animated({}, {opened: {reattached: {startedAt: Date.now()}}}),
+		await animated({depth: 'none'}),
+		await animated({pref: false}),
+		await animated({tty: false}),
+	];
+	for (const r of cases) {
+		assert.equal(r.fu.chats[0]!.intro, undefined);
+		r.ctx.closeAll();
+		await r.done;
+	}
+});
+
+test('the scrollback after the intro is the banner of a chat without animation', async () => {
+	const plainRun = await animated({pref: false}, {}, {notice: 'Could not reopen it'});
+	const animatedRun = await animated({}, {}, {notice: 'Could not reopen it'});
+	animatedRun.fu.chats[0]!.intro!.finish();
+	assert.deepEqual(animatedRun.ctx.lines, plainRun.ctx.lines);
+	for (const r of [plainRun, animatedRun]) {
+		r.ctx.closeAll();
+		await r.done;
+	}
 });

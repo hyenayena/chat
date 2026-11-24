@@ -27,7 +27,7 @@ export type ChatCommandDeps = {
 	log?: Logger;
 	events?: EventBus;
 	devFailure?: () => Promise<DevFailure | undefined>;
-	flow?: Omit<FlowDeps, 'onOpened' | 'onMount' | 'onInbox' | 'inputMode'>;
+	flow?: Omit<FlowDeps, 'onOpened' | 'onMount' | 'onInbox' | 'inputMode' | 'bannerAnimation'>;
 };
 
 const START_MAX = 20_000;
@@ -175,7 +175,7 @@ export function createChatCommands(deps: ChatCommandDeps): Command[] {
 	const profiles = createProfileStore({dataDir: deps.dataDir, log});
 	const hub: ChatHub = createChatHub({
 		log,
-		flow: () => ({...deps.flow, log, profiles, inputMode: () => (prefs.cached().inputMode === 'vim' ? 'vim' : 'normal')}),
+		flow: () => ({...deps.flow, log, profiles, inputMode: () => (prefs.cached().inputMode === 'vim' ? 'vim' : 'normal'), bannerAnimation: () => prefs.cached().bannerAnimation !== false}),
 	});
 
 	const resumeStore = createReloadResume({dataDir: deps.dataDir, log});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {stringCells} from '../../src/kit.js';
-import {formatBanner, MASCOT, PLAIN_LOGO, WORDMARK} from '../../src/ui/banner.js';
+import {SGR_ATTR, stringCells, withColorDepth} from '../../src/kit.js';
+import {bannerAnimates, formatBanner, MASCOT, pawFrame, PAW_PARTS, PAW_STEPS, PLAIN_LOGO, WORDMARK} from '../../src/ui/banner.js';
 
 const ESC = String.fromCharCode(27);
 const plain = (s: string): string => s.replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '');
@@ -118,4 +118,93 @@ test('a dev run shows its working copy under the head; an image run shows nothin
 	assert.ok(!has(image, '/app') && !has(image, 'dev      '));
 	const scrubbed = plain(formatBanner({build: {...build, root: {mode: 'dev', path: '/x/y'}}, columns: 120}, s => s.replace(/x/g, '?')));
 	assert.ok(scrubbed.includes('/?/y'));
+});
+
+const info = {build, model: 'claude-opus-5-5'};
+const cellsOf = (rows: string[]): number[] => rows.map(stringCells);
+
+test('the paw parts keep the blank cells of the mascot', () => {
+	assert.equal(PAW_PARTS.length, MASCOT.length);
+	MASCOT.forEach((row, i) => {
+		const parts = PAW_PARTS[i]!;
+		assert.equal(parts.length, row.length, `row ${i}`);
+		for (let c = 0; c < row.length; c++) assert.equal(parts[c] === ' ', row[c] === ' ', `row ${i} col ${c}`);
+	});
+});
+
+test('the paw frame starts with the pad and adds one toe per step', () => {
+	const pad = pawFrame(0);
+	assert.deepEqual(pad.slice(0, 3).map(r => r.trim()), ['', '', '']);
+	assert.equal(pad[3]!.trimEnd(), '      ███████╗');
+	assert.equal(pad[4], MASCOT[4]);
+	assert.equal(pad[5], MASCOT[5]);
+	for (let k = 1; k <= PAW_STEPS; k++) {
+		const before = pawFrame(k - 1);
+		const after = pawFrame(k);
+		let added = 0;
+		after.forEach((row, i) => {
+			for (let c = 0; c < row.length; c++) {
+				if (row[c] === before[i]![c]) continue;
+				assert.equal(PAW_PARTS[i]![c], String(k));
+				added++;
+			}
+		});
+		assert.ok(added > 0, `step ${k}`);
+	}
+	assert.deepEqual(pawFrame(PAW_STEPS), MASCOT);
+	assert.deepEqual(pawFrame(99), MASCOT);
+	assert.deepEqual(pawFrame(-3), pad);
+});
+
+test('an animation frame keeps the box, the wordmark and the info in place', () => {
+	for (const columns of [120, 40]) {
+		const full = plain(formatBanner({...info, columns}, id)).split('\n');
+		for (let s = 0; s <= PAW_STEPS; s++) {
+			const rows = plain(formatBanner({...info, columns}, id, {pawStep: s})).split('\n');
+			assert.equal(rows.length, full.length);
+			assert.deepEqual(cellsOf(rows), cellsOf(full));
+			if (columns === 120) {
+				for (let i = 0; i < WORDMARK.length; i++) assert.ok(rows[1 + i]!.includes(WORDMARK[i]!));
+			}
+			assert.ok(has(rows, 'yena 0.1.0') || columns === 40);
+		}
+		assert.equal(formatBanner({...info, columns}, id, {pawStep: PAW_STEPS}), formatBanner({...info, columns}, id));
+		assert.notEqual(formatBanner({...info, columns}, id, {pawStep: 0}), formatBanner({...info, columns}, id));
+	}
+});
+
+test('the plain logo and tiny widths do not animate', () => {
+	assert.equal(bannerAnimates(15), false);
+	assert.equal(bannerAnimates(7), false);
+	assert.equal(bannerAnimates(120), true);
+	assert.equal(bannerAnimates(40), true);
+	for (let s = 0; s <= PAW_STEPS; s++) assert.equal(formatBanner({...info, columns: 15}, id, {pawStep: s}), formatBanner({...info, columns: 15}, id));
+});
+
+test('the glint is a bold band that runs diagonally over the logo and leaves the static banner at both ends', () => {
+	withColorDepth('16', () => {
+		for (const columns of [120, 40]) {
+			const full = formatBanner({...info, columns}, id);
+			assert.equal(formatBanner({...info, columns}, id, {pawStep: PAW_STEPS, glint: 0}), full);
+			assert.equal(formatBanner({...info, columns}, id, {pawStep: PAW_STEPS, glint: 1}), full);
+			const mid = formatBanner({...info, columns}, id, {pawStep: PAW_STEPS, glint: 0.5});
+			assert.notEqual(mid, full);
+			assert.deepEqual(plain(mid).split('\n'), plain(full).split('\n'));
+			const starts = mid
+				.split('\n')
+				.slice(1, 1 + MASCOT.length)
+				.map(r => {
+					const at = r.indexOf(SGR_ATTR.bold);
+					return at < 0 ? -1 : stringCells(plain(r.slice(0, at)));
+				});
+			const shown = starts.filter(n => n >= 0);
+			assert.ok(shown.length > 1);
+			for (let i = 1; i < starts.length; i++) if (starts[i]! >= 0 && starts[i - 1]! >= 0) assert.ok(starts[i]! < starts[i - 1]!);
+		}
+	});
+});
+
+test('the glint waits for the whole paw and skips the plain logo', () => {
+	assert.equal(formatBanner({...info, columns: 120}, id, {pawStep: 2, glint: 0.5}), formatBanner({...info, columns: 120}, id, {pawStep: 2}));
+	assert.equal(formatBanner({...info, columns: 15}, id, {pawStep: PAW_STEPS, glint: 0.5}), formatBanner({...info, columns: 15}, id));
 });

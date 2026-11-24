@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {stringCells, stripStyles, styledCells, withColorDepth, type ColorDepth} from '../../src/kit.js';
-import {chatStatusRow, contextSegment, contextTone, shortModel, type StatusInput} from '../../src/ui/status-bar.js';
+import {SGR_ATTR, stringCells, stripStyles, styledCells, withColorDepth, type ColorDepth} from '../../src/kit.js';
+import {SHIMMER_PAUSE, SHIMMER_WIDTH, chatStatusRow, contextSegment, contextTone, shimmer, shortModel, type StatusInput} from '../../src/ui/status-bar.js';
 
 const ESC = String.fromCharCode(27);
 
@@ -134,4 +134,30 @@ test('the permission mode is a short badge after the activity, never dropped; de
 	assert.doesNotMatch(bar({mode: 'default'}, 200), /⏵|⏸/);
 	assert.match(bar({mode: 'auto'}, 20), /⏵⏵ auto/);
 	assert.doesNotMatch(bar({phase: 'running', status: {kind: 'thinking', tokens: 0}}, 200), /esc to interrupt|shift\+tab/);
+});
+
+test('shimmer moves a bold band over the text, rests between passes and keeps the visible text', () => {
+	const text = 'Sniffing… 3s';
+	const n = Array.from(text).length;
+	const bandAt = (at: number): number => {
+		const row = shimmer(text, 'running', at, '16');
+		assert.equal(stripStyles(row), text);
+		const i = row.indexOf(SGR_ATTR.bold);
+		return i < 0 ? -1 : stringCells(stripStyles(row.slice(0, i)));
+	};
+	assert.equal(bandAt(0), -1);
+	assert.equal(bandAt(1), 0);
+	assert.equal(bandAt(SHIMMER_WIDTH + 1), 1);
+	assert.equal(bandAt(n + SHIMMER_WIDTH), -1, 'rests after the pass');
+	assert.equal(bandAt(n + SHIMMER_WIDTH + SHIMMER_PAUSE + 1), 0, 'and starts again');
+	assert.equal(shimmer(text, 'running', 2, 'none'), text);
+});
+
+test('the running activity shimmers only when asked, idle never does', () => {
+	const running = {...BASE, phase: 'running' as const, elapsedMs: 3000};
+	const plain = chatStatusRow(running, 120, {frame: '*', depth: '16'});
+	const lit = chatStatusRow(running, 120, {frame: '*', depth: '16', glint: 2});
+	assert.notEqual(lit, plain);
+	assert.equal(stripStyles(lit), stripStyles(plain));
+	assert.equal(chatStatusRow(BASE, 120, {frame: '*', depth: '16', glint: 2}), chatStatusRow(BASE, 120, {frame: '*', depth: '16'}));
 });

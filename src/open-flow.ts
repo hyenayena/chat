@@ -4,6 +4,7 @@ import {NO_ANSWER_TEXT, nounOf} from './contract/profile.js';
 import type {ChatProvider, OpenedChat, OpenEnv, OpenRequest} from './contract/provider.js';
 import type {ShellFeed} from './contract/shell.js';
 import {clockTime} from './clock-time.js';
+import {colorDepth, type ColorDepth} from './kit.js';
 import {readGitBranch} from './git-head.js';
 import {errClass, noopLog} from './log.js';
 import type {ProfileStore} from './profile-bindings.js';
@@ -35,7 +36,14 @@ export type FlowDeps = {
 	loadUi?: () => Promise<ChatUi>;
 	waitPollMs?: number;
 	profiles?: ProfileStore;
+	bannerAnimation?: () => boolean;
+	isTTY?: () => boolean;
 };
+
+const defaultIsTTY = (): boolean => process.stdout.isTTY === true;
+
+export const bannerAnimationOn = (o: {pref: boolean; depth: ColorDepth; tty: boolean; headless: boolean}): boolean =>
+	o.pref && o.depth !== 'none' && o.tty && !o.headless;
 
 export const isMissingModule = (err: unknown): boolean => {
 	const code = (err as {code?: unknown} | null)?.code;
@@ -128,6 +136,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 	let unwatchClosed: (() => void) | undefined;
 	let unwatchActivity: (() => void) | undefined;
 	let unwatchRecord: (() => void) | undefined;
+	let intro: ReturnType<ChatUi['createBannerIntro']> | undefined;
 	try {
 		const shell = opened.shell;
 		shellPanel = shell
@@ -166,18 +175,35 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		}
 		unwatchActivity = watchChatActivity(session, {id: 'user', label: nounOf(req.profile)});
 		let printHistory: ((text: string, options?: PrintOptions) => void) | undefined;
+		const banner = (columns: number, pawStep?: number, glint?: number): string =>
+			formatBanner({build: deps.build, model: opened.model, columns}, scrub, pawStep === undefined ? undefined : {pawStep, ...(glint !== undefined && {glint})});
+		const fresh = !resume && !opened.reattached;
 		const mounted = mount(control => {
-			printHistory = control.print ?? ctx.print;
+			const base = control.print ?? ctx.print;
 			chatHost = control.host;
-			deps.onMount?.(control.close);
+			intro =
+				fresh &&
+				bannerAnimationOn({pref: deps.bannerAnimation?.() ?? true, depth: colorDepth(), tty: (deps.isTTY ?? defaultIsTTY)(), headless: ctx.headless === true}) &&
+				ui.bannerAnimates(Math.max(1, (control.host?.columns() || 80) - 1))
+					? ui.createBannerIntro({render: banner, columns: () => chatHost?.columns() || 80, print: base})
+					: undefined;
+			const live = intro;
+			const out = live ? live.print : base;
+			printHistory = out;
+			const closeView = (): void => {
+				live?.finish();
+				control.close();
+			};
+			deps.onMount?.(closeView);
 			// A provider that closes its session (a stop from another yena) ends the view too.
 			unwatchClosed = session.subscribe(e => {
-				if (e.type === 'state' && e.state === 'closed') control.close();
+				if (e.type === 'state' && e.state === 'closed') closeView();
 			});
 			return ui.createChatElement({
 				controller: session,
-				print: control.print ?? ctx.print,
-				close: control.close,
+				print: out,
+				close: closeView,
+				...(live && {intro: live}),
 				...(control.host && {host: control.host}),
 				scrub,
 				reveal,
@@ -252,10 +278,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 			}
 			if (earlier.length > 0) print(formatNotice('Resumed — earlier messages above.', scrub));
 		}
-		if (!resume && !opened.reattached && printHistory) {
-			const banner = (columns: number): string => formatBanner({build: deps.build, model: opened.model, columns}, scrub);
-			printHistory(banner(chatHost?.columns() || 80), {render: banner});
-		}
+		if (fresh && !intro && printHistory) printHistory(banner(chatHost?.columns() || 80), {render: w => banner(w)});
 		if (req.profile?.banner && printHistory) printHistory(formatNotice(req.profile.banner, scrub));
 		if (notice && printHistory) printHistory(formatNotice(notice, scrub));
 		if (opened.reattached && printHistory) {
@@ -263,6 +286,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 		}
 		await mounted;
 	} finally {
+		intro?.dispose();
 		const sessionId = session.sessionId;
 		const model = session.model;
 		shellPanel?.dispose();
