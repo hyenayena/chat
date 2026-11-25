@@ -46,7 +46,11 @@ import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
 import {useViewHost, useTerminalSize} from './kit.js';
-import {liveRowCap} from '../kit.js';
+import {inkTone, liveRowCap} from '../kit.js';
+import {SHELL_LIMITS, type ShellRunner} from '../contract/shell-context.js';
+import {isShellLine, SHELL_NOTICES, shellCommandOf} from './shell-mode.js';
+import {useShellRun} from './use-shell-run.js';
+import {ShellLive, shellLiveRows} from './ShellLive.js';
 import {BannerIntro} from './BannerIntro.js';
 import type {BannerIntro as BannerIntroController} from './banner-intro.js';
 import {preloadHighlighter} from './highlight.js';
@@ -78,6 +82,7 @@ export interface ChatViewProps {
 	initialDraft?: string;
 	initialSend?: string;
 	onInbox?: (deliver: ((text: string) => void) | undefined) => void;
+	runShell?: ShellRunner;
 	files?: () => readonly string[];
 	openEditor?: (text: string) => Promise<string | undefined>;
 	loadTranscript?: () => Promise<ViewerLine[]>;
@@ -208,9 +213,11 @@ export function ChatView(props: ChatViewProps) {
 	const edRef = useRef<EditorState>(initialText ? editorReduce(emptyEditor, {type: 'insert', text: initialText}) : emptyEditor);
 	const closedRef = useRef(false);
 	const queueRef = useRef<string[]>(controller.state === 'running' ? [...(controller.queued ?? [])] : []);
+	const fromModuleRef = useRef<boolean[]>([]);
 	const setQueue = useCallback(
-		(next: string[]) => {
+		(next: string[], fromModule: readonly boolean[] = []) => {
 			queueRef.current = next;
+			fromModuleRef.current = next.map((_, i) => fromModule[i] === true);
 			controller.setQueued?.(next);
 		},
 		[controller],
@@ -248,6 +255,8 @@ export function ChatView(props: ChatViewProps) {
 	const lastFrameRef = useRef(0);
 	const tailPeakRef = useRef(0);
 	if (columns > 0) lastWidthRef.current = columns;
+	const shell = useShellRun({runShell: props.runShell, print, scrub, columns: () => lastWidthRef.current || 80});
+	const {peekContext, consumeContext, start: startShell, stop: stopShell, active: shellActive} = shell;
 
 	const setT = useCallback(
 		(next: TranscriptState) => {
@@ -422,7 +431,7 @@ export function ChatView(props: ChatViewProps) {
 				return;
 			}
 			if (event.type === 'steer-failed') {
-				if (tRef.current.phase !== 'idle' && queueRef.current.length < MAX_QUEUED) setQueue([...queueRef.current, event.text]);
+				if (tRef.current.phase !== 'idle' && queueRef.current.length < MAX_QUEUED) setQueue([...queueRef.current, event.text], fromModuleRef.current);
 				else {
 					const draft = edRef.current.text;
 					edRef.current = editorReduce(emptyEditor, {type: 'insert', text: draft ? `${event.text}\n${draft}` : event.text});
@@ -457,10 +466,13 @@ export function ChatView(props: ChatViewProps) {
 	const flushQueue = useCallback(() => {
 		if (closedRef.current || queueRef.current.length === 0 || controller.state !== 'idle') return;
 		const text = queueRef.current.join('\n\n');
+		const typedText = queueRef.current.some((_, i) => fromModuleRef.current[i] !== true);
 		setQueue([]);
 		render();
+		const context = text.startsWith('/') || !typedText ? undefined : peekContext();
 		try {
-			controller.send(text);
+			if (context) controller.send(text, {context});
+			else controller.send(text);
 		} catch (error) {
 			const draft = edRef.current.text;
 			edRef.current = editorReduce(emptyEditor, {type: 'insert', text: draft ? `${text}\n${draft}` : text});
@@ -468,8 +480,9 @@ export function ChatView(props: ChatViewProps) {
 			render();
 			return;
 		}
+		if (context) consumeContext();
 		if ((controller.state as string) === 'running') feed({type: 'state', state: 'running'});
-	}, [controller, print, render, scrub, setQueue]);
+	}, [controller, print, render, scrub, setQueue, peekContext, consumeContext]);
 
 	const cancelPending = useCallback(() => {
 		if (controller.detachesOnClose) return;
@@ -544,8 +557,10 @@ export function ChatView(props: ChatViewProps) {
 	}, [controller, requestMode]);
 
 	const steerOrQueue = useCallback(
-		(text: string): boolean => {
-			if (tRef.current.phase === 'running' && controller.steer && queueRef.current.length === 0) {
+		(text: string, typed = true): boolean => {
+			// Steering carries no shell context, so typed text with a pending context waits in the queue.
+			const steerable = !typed || peekContext() === undefined;
+			if (tRef.current.phase === 'running' && controller.steer && queueRef.current.length === 0 && steerable) {
 				try {
 					controller.steer(text);
 					return true;
@@ -553,14 +568,35 @@ export function ChatView(props: ChatViewProps) {
 				}
 			}
 			if (queueRef.current.length >= MAX_QUEUED) return false;
-			setQueue([...queueRef.current, text]);
+			setQueue([...queueRef.current, text], [...fromModuleRef.current, !typed]);
 			return true;
 		},
-		[controller, setQueue],
+		[controller, setQueue, peekContext],
 	);
 
-	const submit = useCallback(() => {
-		const text = edRef.current.text.trim();
+	const submitShell = useCallback(
+		(raw: string) => {
+			const command = shellCommandOf(raw);
+			if (command === '') return;
+			const refuse = (notice: string) => setT(setNotice(tRef.current, notice));
+			if (/[\r\n]/.test(command)) return refuse(SHELL_NOTICES.oneLine);
+			if (command.length > SHELL_LIMITS.commandChars) return refuse(SHELL_NOTICES.tooLong);
+			if (shellActive()) return refuse(SHELL_NOTICES.running);
+			if (!props.runShell) return refuse(SHELL_NOTICES.unavailable);
+			historyRef.current = {index: -1, draft: emptyEditor};
+			rememberSent(raw);
+			edRef.current = emptyEditor;
+			setT(setNotice(tRef.current, undefined));
+			startShell(command);
+		},
+		[props.runShell, setT, shellActive, startShell],
+	);
+
+	// Only Enter typed in the view may start a shell run: text that arrives otherwise always goes to the model.
+	const submit = useCallback((typed: boolean) => {
+		const raw = edRef.current.text;
+		if (typed && isShellLine(raw)) return submitShell(raw);
+		const text = raw.trim();
 		if (text === '') return;
 		if (text === ':q' || text === ':q!') {
 			edRef.current = emptyEditor;
@@ -593,16 +629,19 @@ export function ChatView(props: ChatViewProps) {
 		}
 		edRef.current = emptyEditor;
 		setT(setNotice(tRef.current, undefined));
+		const context = message.startsWith('/') ? undefined : peekContext();
 		try {
-			controller.send(message);
+			if (context) controller.send(message, {context});
+			else controller.send(message);
 		} catch (error) {
 			edRef.current = editorReduce(emptyEditor, {type: 'insert', text});
 			print(formatError(error instanceof Error ? error.message : String(error), scrub));
 			render();
 			return;
 		}
+		if (context) consumeContext();
 		if (controller.state === 'running') feed({type: 'state', state: 'running'});
-	}, [controller, feed, host, leave, print, printNotice, render, requestMode, scrub, setT, steerOrQueue]);
+	}, [controller, feed, host, leave, print, printNotice, render, requestMode, scrub, setT, steerOrQueue, submitShell, peekContext, consumeContext]);
 
 	const sentInitial = useRef(false);
 	useEffect(() => {
@@ -614,7 +653,7 @@ export function ChatView(props: ChatViewProps) {
 		if (sentInitial.current || !text) return;
 		sentInitial.current = true;
 		edRef.current = editorReduce(emptyEditor, {type: 'insert', text});
-		submit();
+		submit(false);
 	}, [props.initialSend, submit]);
 
 	const pinWatch = props.pin;
@@ -626,7 +665,7 @@ export function ChatView(props: ChatViewProps) {
 		onInbox(text => {
 			if (closedRef.current) throw new Error(`The ${noun} is closed`);
 			if (tRef.current.phase !== 'idle') {
-				if (!steerOrQueue(text)) throw new Error(BUSY_HINT);
+				if (!steerOrQueue(text, false)) throw new Error(BUSY_HINT);
 				render();
 				return;
 			}
@@ -656,6 +695,7 @@ export function ChatView(props: ChatViewProps) {
 	);
 
 	const escape = useCallback(() => {
+		if (stopShell()) return;
 		const phase = tRef.current.phase;
 		if (phase === 'running') {
 			const now = Date.now();
@@ -670,13 +710,14 @@ export function ChatView(props: ChatViewProps) {
 			if (!host) leave();
 		} else if (edRef.current.text !== '') edit({type: 'clear'});
 		else if (!host) leave();
-	}, [edit, host, interrupt, leave, setT]);
+	}, [edit, host, interrupt, leave, setT, stopShell]);
 
 	const ctrlC = useCallback(() => {
+		if (stopShell()) return;
 		const phase = tRef.current.phase;
 		if (phase === 'running') interrupt();
 		else leave();
-	}, [interrupt, leave]);
+	}, [interrupt, leave, stopShell]);
 
 	const currentPrompt = (): PromptEntry | null => {
 		const head = controller.pendingPermissions[0];
@@ -724,6 +765,7 @@ export function ChatView(props: ChatViewProps) {
 	const activeMention = (): {start: number; matches: string[]} | undefined => {
 		if (mentionRef.current.dismissed || !props.files) return undefined;
 		const ed = edRef.current;
+		if (isShellLine(ed.text)) return undefined;
 		const at = mentionAt(ed.text, ed.cursor);
 		if (!at) return undefined;
 		const matches = matchFiles(props.files(), at.query, MENTION_ROWS);
@@ -995,7 +1037,7 @@ export function ChatView(props: ChatViewProps) {
 			case 'edit':
 				return effect.actions.length > 0 ? edit(...effect.actions) : render();
 			case 'submit':
-				return submit();
+				return submit(true);
 			case 'undo':
 				return undo();
 			case 'history':
@@ -1100,7 +1142,7 @@ export function ChatView(props: ChatViewProps) {
 		}
 		if (key.return) {
 			if (key.meta || key.shift) return edit({type: 'insert', text: '\n'});
-			return submit();
+			return submit(true);
 		}
 		if ((key.backspace || key.delete) && key.meta) return edit({type: 'killWordBack'});
 		if (key.backspace || key.delete) return edit({type: 'backspace'});
@@ -1298,6 +1340,7 @@ export function ChatView(props: ChatViewProps) {
 				? `Auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this ${noun}? Enter to confirm, any other key cancels.`
 				: t.notice;
 	const rule = '─'.repeat(Math.max(1, columns - 1));
+	const shellMode = isShellLine(ed.text);
 	const noticeNeeded = noticeText ? Math.ceil(noticeText.length / Math.max(1, columns)) : 0;
 	const mention = activeMention();
 	const command = mention ? undefined : activeCommand();
@@ -1316,6 +1359,7 @@ export function ChatView(props: ChatViewProps) {
 		vim: vimNormal,
 		queued: Math.min(3, queueRef.current.length),
 		tools: toolLayout(toolCount, LIVE.maxTools + 1).rows,
+		shell: shellLiveRows(shell.running, shell.pending),
 		tail: wantedTail,
 		typing: typing ? 1 : 0,
 	});
@@ -1343,6 +1387,7 @@ export function ChatView(props: ChatViewProps) {
 				</Text>
 			))}
 			{toolRows > 0 && <LiveTools tools={tools} fold={t.fold} scrub={scrub} maxRows={toolRows} width={Math.max(1, columns - 1)} />}
+			{live.shell > 0 && <ShellLive running={shell.running} pending={shell.pending} width={Math.max(1, columns - 1)} maxRows={live.shell} scrub={scrub} />}
 			{queued.map((line, i) => (
 				<Text key={`queued-${i}`} dimColor wrap="truncate">
 					{line}
@@ -1370,16 +1415,16 @@ export function ChatView(props: ChatViewProps) {
 					);
 				})}
 			{live.typing > 0 && typing && <Text wrap="truncate">{typing.text}</Text>}
-			{ruleRows > 0 && <Text dimColor>{rule}</Text>}
+			{ruleRows > 0 && <Text {...(shellMode ? inkTone('shell') : {dimColor: true})}>{rule}</Text>}
 			{searchRef.current ? (
 				<Text wrap="truncate">
 					<Text dimColor>{`(reverse-i-search) '${scrub(searchRef.current.query)}': `}</Text>
 					{searchRef.current.index >= 0 ? scrub(sentHistory[searchRef.current.index]!.replace(/\s+/g, ' ')) : ''}
 				</Text>
 			) : (
-				<InputLine text={ed.text} cursor={ed.cursor} columns={columns} maxRows={inputRows} />
+				<InputLine text={ed.text} cursor={ed.cursor} columns={columns} maxRows={inputRows} shell={shellMode} />
 			)}
-			{ruleRows > 0 && <Text dimColor>{rule}</Text>}
+			{ruleRows > 0 && <Text {...(shellMode ? inkTone('shell') : {dimColor: true})}>{rule}</Text>}
 			{live.vim > 0 && <Text dimColor>-- NORMAL --</Text>}
 			{statusBar}
 		</Box>

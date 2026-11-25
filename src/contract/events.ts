@@ -117,7 +117,7 @@ export interface ChatController {
 	setQueued?(lines: readonly string[]): void;
 	setMode(mode: ChatMode): void;
 	answerPermission(id: string, decision: PermissionDecision): boolean;
-	send(text: string, opts?: {command?: boolean}): void;
+	send(text: string, opts?: {command?: boolean; context?: string}): void;
 	steer?(text: string): void;
 	interrupt(): Promise<void>;
 	reset(): void;

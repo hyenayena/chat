@@ -51,6 +51,7 @@ export type LiveNeeds = {
 	vim: boolean;
 	queued: number;
 	tools: number;
+	shell?: number;
 	tail: number;
 	typing?: number;
 };
@@ -62,6 +63,7 @@ export type LiveHeights = {
 	vim: number;
 	queued: number;
 	tools: number;
+	shell: number;
 	tail: number;
 	rules: number;
 	typing: number;
@@ -71,6 +73,8 @@ export type LiveHeights = {
 
 const want = (n: number): number => (Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
 
+export const SHELL_LIVE_MAX_ROWS = 6;
+
 // Priorities run opposite to the drop order: the live tail goes first, the status bar never.
 export function liveLayout(needs: LiveNeeds): LiveHeights {
 	const {rows} = needs;
@@ -78,6 +82,7 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 	const menu = want(needs.menu);
 	const queued = want(needs.queued);
 	const tools = want(needs.tools);
+	const shell = Math.min(SHELL_LIVE_MAX_ROWS, want(needs.shell ?? 0));
 	const tail = want(needs.tail);
 	const input = Math.max(1, want(needs.inputNeeded));
 	const vim = needs.vim ? 1 : 0;
@@ -88,8 +93,10 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 		{id: 'notice', min: Math.min(1, notice), desired: notice, priority: 80, fixed: true},
 		{id: 'menu', min: Math.min(1, menu), desired: menu, priority: 75, fixed: true},
 		{id: 'vim', min: vim, desired: vim, priority: 70, fixed: true},
+		{id: 'shellMin', min: Math.min(1, shell), desired: Math.min(1, shell), priority: 65},
 		{id: 'toolMin', min: Math.min(1, tools), desired: Math.min(1, tools), priority: 60},
 		{id: 'toolExtra', min: 0, desired: Math.max(0, tools - 1), priority: 50},
+		{id: 'shellExtra', min: 0, desired: Math.max(0, shell - 1), priority: 45},
 		{id: 'typing', min: 0, desired: typing, priority: 50},
 		{id: 'rules', min: 2, desired: 2, priority: 40},
 		{id: 'inputExtra', min: 0, desired: input - 1, priority: 30},
@@ -108,6 +115,7 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 		vim: h.vim ?? 0,
 		queued: h.queued ?? 0,
 		tools: (h.toolMin ?? 0) + (h.toolExtra ?? 0),
+		shell: (h.shellMin ?? 0) + (h.shellExtra ?? 0),
 		tail: h.tail ?? 0,
 		rules: h.rules ?? 0,
 		typing: h.typing ?? 0,

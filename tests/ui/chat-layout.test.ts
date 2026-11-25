@@ -4,7 +4,7 @@ import type {ChatEvent, PlanItem} from '../../src/public.js';
 import {fixedRowBudget, liveRowCap, ROW_BREAKPOINTS} from '../../src/kit.js';
 import {PANEL} from '../../src/ui/agent-panel.js';
 import {initialAgents, reduceAgents, type AgentsState} from '../../src/ui/agents.js';
-import {headerLayout, liveLayout, promptBudget, viewerHeight, type LiveHeights, type LiveNeeds} from '../../src/ui/chat-layout.js';
+import {headerLayout, liveLayout, SHELL_LIVE_MAX_ROWS, promptBudget, viewerHeight, type LiveHeights, type LiveNeeds} from '../../src/ui/chat-layout.js';
 import type {PlanView} from '../../src/ui/plan-widget.js';
 
 const scrub = (s: string) => s;
@@ -30,7 +30,7 @@ const needs = (patch: Partial<LiveNeeds> = {}): LiveNeeds => ({
 	...patch,
 });
 
-const frameOf = (h: LiveHeights, status = 1): number => h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + status;
+const frameOf = (h: LiveHeights, status = 1): number => h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.shell + h.tail + h.rules + status;
 
 test('header plus live area stay within the fixed budget and the frame within the live cap', () => {
 	for (const columns of COLUMNS) {
@@ -156,4 +156,26 @@ test('the typing row drops with the extra tool rows and never shows in the tiny 
 		if (h.typing === 1) assert.ok(h.tools >= 1, `${rows}`);
 		assert.ok(h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
 	}
+});
+
+test('shell rows come after the tool row and before the extra tool rows, and are capped', () => {
+	const roomy = liveLayout(needs({rows: 40, shell: 20}));
+	assert.equal(roomy.shell, SHELL_LIVE_MAX_ROWS);
+	assert.equal(frameOf(roomy), roomy.used);
+	assert.equal(liveLayout(needs({rows: 40, shell: 0})).shell, 0);
+	for (let headerHeight = 0; headerHeight <= 12; headerHeight++) {
+		const live = liveLayout(needs({rows: 24, headerHeight, shell: 4, tools: 4}));
+		if (live.tools >= 1) assert.ok(live.shell >= 1, `header ${headerHeight}: ${JSON.stringify(live)}`);
+		assert.equal(frameOf(live), live.used, `header ${headerHeight}`);
+	}
+});
+
+test('the tiny tier keeps no shell rows unless the one row fits', () => {
+	for (const rows of ROWS.filter(r => r < ROW_BREAKPOINTS.short)) {
+		const live = liveLayout(needs({rows, shell: 3}));
+		assert.ok(live.shell <= 1, `rows ${rows}: ${JSON.stringify(live)}`);
+		if (live.shell === 1) assert.ok(frameOf(live) <= liveRowCap(rows), `rows ${rows}`);
+	}
+	const squeezed = liveLayout(needs({rows: 24, headerHeight: 8, inputNeeded: 1, shell: 5, tools: 0, queued: 0, tail: 0}));
+	assert.ok(squeezed.shell >= 1);
 });

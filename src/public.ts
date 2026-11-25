@@ -9,6 +9,7 @@ export * from './contract/truncate.js';
 export * from './contract/usage.js';
 export * from './contract/tools.js';
 export * from './contract/shell.js';
+export * from './contract/shell-context.js';
 export * from './contract/scrub.js';
 export * from './contract/reveal.js';
 export * from './contract/provider.js';

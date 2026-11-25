@@ -9,6 +9,7 @@ import {readGitBranch} from './git-head.js';
 import {errClass, noopLog} from './log.js';
 import type {ProfileStore} from './profile-bindings.js';
 import {createShellPanel} from './shell-panel.js';
+import {createShellRunner} from './shell-run.js';
 import {editInEditor} from './terminal.js';
 import type {ChatUiHelpers, ChatViewProps, ListPickerProps, WaitingViewProps} from './public-ui.js';
 
@@ -150,6 +151,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 				})
 			: undefined;
 
+		const runShell = createShellRunner({cwd: projectDir, log});
 		const lifetime = new AbortController();
 		unregister = (deps.registerAbort ?? registerExitAbort)(lifetime);
 		lifetime.signal.addEventListener('abort', () => session.close());
@@ -223,6 +225,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 				...(req.draft && {initialDraft: req.draft}),
 				...(send && {initialSend: send}),
 				...(deps.onInbox && {onInbox: deps.onInbox}),
+				runShell: req => runShell({...req, signal: AbortSignal.any([req.signal, lifetime.signal])}),
 				files,
 				loadTranscript: async () => {
 					const id = session.sessionId;

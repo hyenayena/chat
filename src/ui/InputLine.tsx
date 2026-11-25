@@ -1,6 +1,6 @@
 import React from 'react';
 import {Box, Text} from 'ink';
-import {inputRowCount, inputWindow, offsetAtCell} from '../kit.js';
+import {inkTone, inputRowCount, inputWindow, offsetAtCell} from '../kit.js';
 
 interface Row {
 	before: string;
@@ -43,18 +43,20 @@ export function InputLine({
 	cursor,
 	columns,
 	maxRows,
+	shell = false,
 }: {
 	text: string;
 	cursor: number;
 	columns: number;
 	maxRows: number;
+	shell?: boolean;
 }) {
 	const rows = inputRows(text, cursor, columns, Math.max(1, maxRows));
 	return (
 		<Box flexDirection="column">
 			{rows.map((row, i) => (
 				<Text key={i} wrap="truncate">
-					{i === 0 ? '> ' : '  '}
+					{i === 0 ? (shell ? <Text {...inkTone('shell')}>{'> '}</Text> : '> ') : '  '}
 					{row.before}
 					{row.cell !== null && <Text inverse>{row.cell}</Text>}
 					{row.after}

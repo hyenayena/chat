@@ -61,7 +61,7 @@ test('the tools section renders at 39, 79, 159 and 200 columns within the width'
 			const rows = withColorDepth(depth, () => render({width, rows: 24, depth, ascii: false}));
 			for (const row of rows) assert.ok(styledCells(row) <= width, `${width} ${depth}: ${stripStyles(row)}`);
 			const text = rows.map(stripStyles).join('\n');
-			for (const part of ['Read 3 files, searched 2 patterns', 'exit 1', 'earlier lines', 'denied', '+2 lines', 'github:search_issues']) {
+			for (const part of ['Read 3 files, searched 2 patterns', 'exit 1', 'earlier lines', 'denied', '+2 lines', 'github:search_issues', '! git status --short', 'exit 2', 'stopped']) {
 				if (width >= 79) assert.ok(text.includes(part), `${width} ${part}`);
 			}
 		}

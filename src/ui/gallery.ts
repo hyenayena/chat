@@ -105,8 +105,14 @@ export const toolsGallerySection: GallerySection = {
 	title: 'Tool calls',
 	description: 'Tool call rows: kind glyph, status mark, duration, folded runs, Bash output, errors',
 	load: async () => {
-		const [card, hl] = await Promise.all([import('./tool-card.js'), import('./highlight.js')]);
+		const [card, hl, shellBlock] = await Promise.all([import('./tool-card.js'), import('./highlight.js'), import('./shell-block.js')]);
 		await hl.preloadHighlighter();
+		const shellRun = (command: string, extra: object = {}) => ({command, stdout: '', stderr: '', outcome: 'exited' as const, exitCode: 0, truncated: false, ms: 300, ...extra});
+		const shellRuns = [
+			shellRun('git status --short', {stdout: ' M src/parse.ts\n?? notes.md', ms: 1400}),
+			shellRun('npm test', {stderr: 'FAIL tests/parse.test.ts\n1 test failed', exitCode: 2, ms: 8200}),
+			shellRun('sleep 60', {outcome: 'stopped' as const, exitCode: undefined, signal: 'SIGTERM', ms: 5000}),
+		];
 		const ok = (name: string, input: unknown, text = '', extra: object = {}) => ({kind: 'tool' as const, name, input, isError: false, text, ...extra});
 		const fail = (name: string, input: unknown, text: string, extra: object = {}) => ({kind: 'tool' as const, name, input, isError: true, text, ...extra});
 		const fold = [read('present.ts', 120, 1000), read('wrap.ts', 40, 1400), read('tool-card.ts', 80, 1800), grep('TODO', 2000), grep('fixme', 2200)];
@@ -124,11 +130,12 @@ export const toolsGallerySection: GallerySection = {
 			ok('mcp__github__search_issues', {query: 'tool cards'}, '3 results'),
 			fail('TodoWrite', {todos: []}, '<tool_use_error>InputValidationError: todos is required</tool_use_error>'),
 		];
-		return ({width: columns, ascii}) => {
+		return ({width: columns, ascii, depth}) => {
 			const width = Math.max(1, columns - 1);
+			const shells = shellRuns.flatMap(r => shellBlock.formatShellBlock(r, scrub, width, {ascii, depth}));
 			const running = card.runningToolRow({id: 'r1', name: 'Agent', input: {subagent_type: 'coder', description: 'Fix the parser'}, elapsedSeconds: 0, startedAt: 1000, activity: {name: 'Read', input: {file_path: 'src/parse.ts'}}}, scrub, width, spinnerFrame(0, {ascii}), 15_000);
 			const blocks = [running, card.formatToolCard(read('present.ts', 120, 1000), scrub, width), card.formatToolGroup(fold, scrub, width), ...items.map(t => card.formatToolCard(t, scrub, width))];
-			return blocks.flatMap(b => b.split('\n'));
+			return [...blocks.flatMap(b => b.split('\n')), ...shells];
 		};
 	},
 };
