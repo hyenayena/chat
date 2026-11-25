@@ -9,6 +9,7 @@ import {watchChatActivity} from './activity.js';
 import {sanitizeText} from './kit.js';
 import {errClass, noopLog} from './log.js';
 import {chatProvider, chatProviders} from './registry.js';
+import {sendWithTime} from './send-time.js';
 
 export const OWNER = /^[a-z][a-z0-9-]{0,31}$/;
 const MODES: readonly string[] = ['default', 'plan'];
@@ -271,7 +272,7 @@ function register(
 			if (session.state === 'running') throw new Error('The module session is answering');
 			if (typeof opened.admitSend !== 'function') throw new Error('The provider does not admit module messages');
 			opened.admitSend('module');
-			session.send(text);
+			sendWithTime(session, text);
 			armIdle();
 		},
 		interrupt: async () => {

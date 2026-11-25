@@ -12,7 +12,7 @@ import type {
 } from '../../src/public.js';
 
 export type FakeSession = ChatSession & {
-	sent: Array<{text: string; command: boolean}>;
+	sent: Array<{text: string; command: boolean; time?: string}>;
 	modes: string[];
 	keeps: boolean[];
 	stopped: string[];
@@ -25,7 +25,7 @@ export type FakeSession = ChatSession & {
 export function makeSession(over: Partial<ChatSession> & {sessionId?: string; state?: 'idle' | 'running' | 'closed'} = {}): FakeSession {
 	const subs = new Set<(e: ChatEvent) => void>();
 	const s = {
-		sent: [] as Array<{text: string; command: boolean}>,
+		sent: [] as Array<{text: string; command: boolean; time?: string}>,
 		modes: [] as string[],
 		keeps: [] as boolean[],
 		stopped: [] as string[],
@@ -45,8 +45,8 @@ export function makeSession(over: Partial<ChatSession> & {sessionId?: string; st
 			s.keeps.push(keep);
 		},
 		answerPermission: () => false,
-		send(text: string, o?: {command?: boolean}) {
-			s.sent.push({text, command: o?.command === true});
+		send(text: string, o?: {command?: boolean; time?: string}) {
+			s.sent.push({text, command: o?.command === true, ...(o?.time !== undefined && {time: o.time})});
 		},
 		interrupt: async () => {},
 		reset() {},

@@ -48,6 +48,7 @@ import {turnFilesRows} from './turn-summary.js';
 import {useViewHost, useTerminalSize} from './kit.js';
 import {inkTone, liveRowCap} from '../kit.js';
 import {SHELL_LIMITS, type ShellRunner} from '../contract/shell-context.js';
+import {sendWithTime} from '../send-time.js';
 import {isShellLine, SHELL_NOTICES, shellCommandOf} from './shell-mode.js';
 import {useShellRun} from './use-shell-run.js';
 import {ShellLive, shellLiveRows} from './ShellLive.js';
@@ -471,8 +472,7 @@ export function ChatView(props: ChatViewProps) {
 		render();
 		const context = text.startsWith('/') || !typedText ? undefined : peekContext();
 		try {
-			if (context) controller.send(text, {context});
-			else controller.send(text);
+			sendWithTime(controller, text, context ? {context} : {}, clock.now());
 		} catch (error) {
 			const draft = edRef.current.text;
 			edRef.current = editorReduce(emptyEditor, {type: 'insert', text: draft ? `${text}\n${draft}` : text});
@@ -482,7 +482,7 @@ export function ChatView(props: ChatViewProps) {
 		}
 		if (context) consumeContext();
 		if ((controller.state as string) === 'running') feed({type: 'state', state: 'running'});
-	}, [controller, print, render, scrub, setQueue, peekContext, consumeContext]);
+	}, [controller, print, render, scrub, setQueue, peekContext, consumeContext, clock]);
 
 	const cancelPending = useCallback(() => {
 		if (controller.detachesOnClose) return;
@@ -631,8 +631,7 @@ export function ChatView(props: ChatViewProps) {
 		setT(setNotice(tRef.current, undefined));
 		const context = message.startsWith('/') ? undefined : peekContext();
 		try {
-			if (context) controller.send(message, {context});
-			else controller.send(message);
+			sendWithTime(controller, message, context ? {context} : {}, clock.now());
 		} catch (error) {
 			edRef.current = editorReduce(emptyEditor, {type: 'insert', text});
 			print(formatError(error instanceof Error ? error.message : String(error), scrub));
@@ -641,7 +640,7 @@ export function ChatView(props: ChatViewProps) {
 		}
 		if (context) consumeContext();
 		if (controller.state === 'running') feed({type: 'state', state: 'running'});
-	}, [controller, feed, host, leave, print, printNotice, render, requestMode, scrub, setT, steerOrQueue, submitShell, peekContext, consumeContext]);
+	}, [controller, feed, host, leave, print, printNotice, render, requestMode, scrub, setT, steerOrQueue, submitShell, peekContext, consumeContext, clock]);
 
 	const sentInitial = useRef(false);
 	useEffect(() => {
@@ -669,11 +668,11 @@ export function ChatView(props: ChatViewProps) {
 				render();
 				return;
 			}
-			controller.send(text);
+			sendWithTime(controller, text, {}, clock.now());
 			if (controller.state === 'running') feed({type: 'state', state: 'running'});
 		});
 		return () => onInbox(undefined);
-	}, [onInbox, controller, feed, render, steerOrQueue]);
+	}, [onInbox, controller, feed, render, steerOrQueue, clock]);
 
 	const browseHistory = useCallback(
 		(step: -1 | 1) => {

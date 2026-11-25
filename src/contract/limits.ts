@@ -1,3 +1,5 @@
+import {canonicalTimeZone, currentTimeZone} from '../kit.js';
+
 export type LimitType =
 	| 'five_hour'
 	| 'seven_day'
@@ -27,15 +29,7 @@ const SHORT_LABELS: Record<LimitType, string> = {
 	overage: 'extra usage',
 };
 
-const zoneOf = (clock: Clock): string => {
-	const candidate = clock.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-	try {
-		new Intl.DateTimeFormat('en-GB', { timeZone: candidate });
-		return candidate;
-	} catch {
-		return 'UTC';
-	}
-};
+const zoneOf = (clock: Clock): string => canonicalTimeZone(clock.timeZone ?? currentTimeZone()) ?? 'UTC';
 
 const timeText = (ms: number, zone: string): string =>
 	new Intl.DateTimeFormat('en-GB', { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', timeZone: zone }).format(ms);

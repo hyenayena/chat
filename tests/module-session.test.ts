@@ -455,3 +455,12 @@ test('a module session reports its activity under chat:module-<owner> and releas
 		setActivityEvents(undefined);
 	}
 });
+
+test('the first module send carries the time line, a second in the same hour does not', async () => {
+	const {h, s} = await mod();
+	h.send('one');
+	h.send('two');
+	const times = (s.sent as Array<{time?: string}>).map(x => x.time);
+	assert.match(times[0] ?? '', /^Current time: \d{4}-\d\d-\d\d \w{3} \d\d:\d\d \(/);
+	assert.equal(times[1], undefined);
+});

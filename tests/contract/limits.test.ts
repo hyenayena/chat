@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {formatReset, limitIndicator, limitNoticeText, usageLimitLabel, type Clock, type RateLimitInfo} from '../../src/public.js';
+import {withTimeZone} from '../../src/kit.js';
 
 const NOW = Date.UTC(2026, 9, 21, 12, 46, 0);
 const at = (iso: string): number => Date.parse(iso) / 1000;
@@ -33,6 +34,11 @@ describe('formatReset', () => {
 	});
 	it('defaults to the resolved zone', () => {
 		assert.match(formatReset(at('2026-10-21T15:00:00Z'), clock()), /^\S.* \S+ \(in 2h 14m\)$/);
+	});
+	it('defaults to the kit zone, and clock.timeZone wins over it', () => {
+		const reset = at('2026-10-21T15:00:00Z');
+		assert.equal(withTimeZone('Asia/Tokyo', () => formatReset(reset, clock())), 'Oct 22, 00:00 Asia/Tokyo (in 2h 14m)');
+		assert.equal(withTimeZone('Asia/Tokyo', () => formatReset(reset, clock('UTC'))), '15:00 UTC (in 2h 14m)');
 	});
 });
 

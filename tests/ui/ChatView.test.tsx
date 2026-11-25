@@ -1679,3 +1679,51 @@ test('the transcript never has two blank rows in a row, nor a blank first or las
 	const rows = t.raw.flatMap(block => stripStyles(block).split('\n'));
 	rows.forEach((row, i) => assert.ok(!(row.trim() === '' && rows[i - 1]?.trim() === ''), `two blank rows at ${i}: ${JSON.stringify(rows.slice(Math.max(0, i - 2), i + 2))}`));
 });
+
+const PINNED = {now: () => Date.UTC(2026, 10, 25, 7, 14)};
+const TIME_LINE = /^Current time: 2026-11-25 Wed \d\d:\d\d \(/;
+
+test('the first send carries the time line, the next one in the same hour does not', async () => {
+	const t = setup(undefined, {clock: PINNED});
+	await t.settle();
+	for (const text of ['one', 'two']) {
+		t.press(text);
+		await t.settle();
+		t.press(ENTER);
+		await t.settle();
+	}
+	assert.match(t.controller.calls.sentOpts[0]?.time ?? '', TIME_LINE);
+	assert.equal(t.controller.calls.sentOpts[1], undefined);
+});
+
+test('an inbox send and a queue flush also get the time line', async () => {
+	let deliver: ((text: string) => void) | undefined;
+	const t = setup(undefined, {clock: PINNED, onInbox: d => (deliver = d)});
+	await t.settle();
+	deliver!('from the inbox');
+	await t.settle();
+	assert.match(t.controller.calls.sentOpts[0]?.time ?? '', TIME_LINE);
+	t.controller.setState('running');
+	await t.settle();
+	deliver!('queued one');
+	await t.settle();
+	t.controller.setState('idle');
+	t.controller.emit({type: 'turn-end', outcome: 'ok'});
+	await t.settle();
+	assert.deepEqual(t.controller.calls.sent, ['from the inbox', 'queued one']);
+	assert.equal(t.controller.calls.sentOpts[1], undefined);
+});
+
+test('a flushed queue on a new controller state gets the time line when none was sent yet', async () => {
+	const t = setup(undefined, {clock: PINNED});
+	t.controller.setState('running');
+	await t.settle();
+	t.press('first');
+	await t.settle();
+	t.press(ENTER);
+	await t.settle();
+	t.controller.setState('idle');
+	t.controller.emit({type: 'turn-end', outcome: 'ok'});
+	await t.settle();
+	assert.match(t.controller.calls.sentOpts[0]?.time ?? '', TIME_LINE);
+});

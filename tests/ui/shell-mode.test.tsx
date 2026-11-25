@@ -20,7 +20,7 @@ afterEach(() => {
 	cleanup = [];
 });
 
-type Sent = {text: string; opts?: {command?: boolean; context?: string}};
+type Sent = {text: string; opts?: {command?: boolean; context?: string; time?: string}};
 type ShellCall = {command: string; signal: AbortSignal; output: (text: string) => void; finish: (extra?: Partial<ShellRun>) => void};
 
 function fakeShell() {
@@ -46,7 +46,7 @@ function setup(extra: Partial<ChatViewProps> = {}, size?: {columns: number; rows
 		sends,
 		steered,
 		failNext: false,
-		send(text: string, opts?: {command?: boolean; context?: string}) {
+		send(text: string, opts?: {command?: boolean; context?: string; time?: string}) {
 			if (controller.failNext) {
 				controller.failNext = false;
 				throw new Error('The chat is not ready');
@@ -63,7 +63,7 @@ function setup(extra: Partial<ChatViewProps> = {}, size?: {columns: number; rows
 	const shell = fakeShell();
 	const printed: string[] = [];
 	const h = mountHarness(
-		createElement(ChatView, {controller, print: s => void printed.push(s), close() {}, scrub, runShell: shell.runShell, ...extra}),
+		createElement(ChatView, {controller, print: s => void printed.push(s), close() {}, scrub, runShell: shell.runShell, clock: {now: () => Date.UTC(2026, 10, 25, 7, 14)}, ...extra}),
 		size,
 	);
 	cleanup.push(() => h.unmount());
@@ -199,6 +199,7 @@ test('the next message carries the shell context, the one after it does not', as
 	assert.ok(first.opts?.context?.includes('<bash-input>echo hi</bash-input>'));
 	assert.ok(!first.opts?.context?.includes(SECRET));
 	assert.ok(first.opts?.context?.includes('[redacted]'));
+	assert.match(first.opts?.time ?? '', /^Current time: 2026-11-25 Wed \d\d:\d\d \(/);
 	await type(t, 'and again');
 	assert.equal(t.c.sends[1]?.opts, undefined);
 });

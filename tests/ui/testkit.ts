@@ -55,6 +55,7 @@ export function mountHarness(element: ReactElement, size = {columns: 80, rows: 2
 export interface FakeController extends ChatController {
 	calls: {
 		sent: string[];
+		sentOpts: Array<{command?: boolean; context?: string; time?: string} | undefined>;
 		interrupts: number;
 		resets: number;
 		closes: number;
@@ -71,7 +72,7 @@ export interface FakeController extends ChatController {
 
 export function fakeController(): FakeController {
 	const listeners = new Set<(e: ChatEvent) => void>();
-	const calls: FakeController['calls'] = {sent: [], interrupts: 0, resets: 0, closes: 0, modes: [], answers: []};
+	const calls: FakeController['calls'] = {sent: [], sentOpts: [], interrupts: 0, resets: 0, closes: 0, modes: [], answers: []};
 	let state: ChatState = 'idle';
 	let mode: ChatMode = 'default';
 	const fake: FakeController = {
@@ -109,8 +110,9 @@ export function fakeController(): FakeController {
 			if (i >= 0) fake.pendingPermissions.splice(i, 1);
 			fake.emit({type: 'permission-resolved', id, pending: fake.pendingPermissions.length});
 		},
-		send(text) {
+		send(text, opts) {
 			calls.sent.push(text);
+			calls.sentOpts.push(opts);
 			fake.emit({type: 'sent', text});
 		},
 		async interrupt() {

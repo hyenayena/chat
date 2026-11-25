@@ -2,7 +2,7 @@
 
 Provider-neutral chat for yena: the chat contract (the events a chat engine emits, the session controller a UI drives, the permission requests a provider raises) and the chat UI (the views, moved from `claude` in CHAT-2).
 
-It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.7.7): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
+It is a yena plugin (`runtime: "node"`, `entry: src/index.ts`, `install: bin/install`, version 0.7.8): it registers the gallery sections and adds the `chat` and `fix` commands. It depends on core only and has no credentials; its data directory holds `prefs.json` and `exports/`. Its one npm dependency is highlight.js 11.12.0 (exact pin; see Development).
 
 ## Commands (`src/commands.ts`)
 
@@ -39,6 +39,7 @@ Pure files: no `node:fs`, no React or Ink, no theme tables. `src/public.ts` re-e
 - `tools.ts`: the canonical tool vocabulary (agent tools, the console MCP tool names).
 - `shell.ts`: `ShellCall`, `ShellSnapshot`, `ShellFeed`.
 - `shell-context.ts`: `ShellRun`, `ShellRunner`, `SHELL_LIMITS`, `formatShellContext` and `isShellContext` (the `!` runs; `architecture/chat/contract.md`). `send` takes the formatted text as `context`.
+- `time-context.ts` (0.7.8): `formatTimeContext`, `timeContextKey` and the strict `isTimeContext` for the `Current time:` line that `send` takes as `time`; `src/send-time.ts` (`sendWithTime`, exported from `public.ts`) attaches it to the first message of a chat and after a change of date, hour or zone.
 - `scrub.ts`: `makeScrub(redact)`, core's `sanitizeBlock` then the caller's redactor.
 - `reveal.ts`: `makeReveal(redact)`, the same redaction with control and invisible characters shown as `⟦…⟧` tokens.
 
