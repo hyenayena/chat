@@ -45,6 +45,7 @@ test('built-in tools map to their family', () => {
 test('yena console tools: list is read, run is shell', () => {
 	assert.equal(toolFamily('mcp__yena__list_commands'), 'read');
 	assert.equal(toolFamily('mcp__yena__run_command'), 'shell');
+	assert.equal(toolFamily('mcp__yena__read_output'), 'read');
 });
 
 test('other MCP tools are classified by the tool word and shown as server:tool', () => {
@@ -63,6 +64,7 @@ test('other MCP tools are classified by the tool word and shown as server:tool',
 	assert.equal(mcpParts('Bash'), undefined);
 	assert.equal(displayName('mcp__gh__get_issue'), 'gh:get_issue');
 	assert.equal(displayName('mcp__yena__run_command'), 'Yena');
+	assert.equal(displayName('mcp__yena__read_output'), 'Yena');
 });
 
 test('only Read, Grep, Glob and LS fold', () => {

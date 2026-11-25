@@ -127,6 +127,8 @@ export const toolsGallerySection: GallerySection = {
 			ok('WebFetch', {url: 'https://example.com/docs'}, 'page', {durationMs: 900}),
 			ok('Agent', {subagent_type: 'coder', description: 'Fix the parser'}, 'done', {durationMs: 95_000}),
 			ok('mcp__yena__run_command', {command: 'mod list'}, 'core 0.19.0\nclaude 0.24.0'),
+			ok('mcp__yena__run_command', {commands: ['mod list', 'mod info core']}, '[1/2 ok] mod list\ncore 0.19.0\n\n[2/2 ok] mod info core\ncore 0.19.0'),
+			ok('mcp__yena__read_output', {id: 'q7x-3', grep: 'error'}, '[output q7x-3: 2 matching lines from line 1]\n12: error: x\n40: error: y'),
 			ok('mcp__github__search_issues', {query: 'tool cards'}, '3 results'),
 			fail('TodoWrite', {todos: []}, '<tool_use_error>InputValidationError: todos is required</tool_use_error>'),
 		];

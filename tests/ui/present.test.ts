@@ -256,6 +256,11 @@ test('yena console tools are shown as Yena with the command line', async () => {
 	const id = (s: string) => s;
 	assert.equal(toolHeader('mcp__yena__run_command', {command: 'http get https://x.test'}, id), 'Yena(http get https://x.test)');
 	assert.equal(toolHeader('mcp__yena__list_commands', {}, id), 'Yena(list commands)');
+	assert.equal(toolHeader('mcp__yena__list_commands', {command: 'mod'}, id), 'Yena(list commands mod)');
+	assert.equal(toolHeader('mcp__yena__run_command', {commands: ['mod list', 'a', 'b']}, id), 'Yena(mod list (+2 more))');
+	assert.equal(toolHeader('mcp__yena__run_command', {commands: ['mod list']}, id), 'Yena(mod list)');
+	assert.equal(toolHeader('mcp__yena__read_output', {id: 'q7x-3', grep: 'error'}, id), 'Yena(output q7x-3 grep error)');
+	assert.equal(toolHeader('mcp__yena__read_output', {id: 'q7x-3', from: 101}, id), 'Yena(output q7x-3 from 101)');
 	assert.equal(styledToolHeader('mcp__yena__run_command', {command: 'mod list'}, id), `${SGR.bold}Yena${SGR.boldOff}(mod list)`);
 	assert.equal(toolHeader('mcp__other__run_command', {command: 'x'}, id), 'other:run_command(command)');
 });

@@ -1,6 +1,6 @@
 import {summarizeArgs} from '../public.js';
 import {CANCEL_MESSAGE, DENY_MESSAGE, DISMISS_MESSAGE} from '../public.js';
-import {LIST_COMMANDS_TOOL, RUN_COMMAND_TOOL} from '../public.js';
+import {LIST_COMMANDS_TOOL, READ_OUTPUT_TOOL, RUN_COMMAND_TOOL} from '../public.js';
 import type {ToolPatch} from '../public.js';
 import {sgr} from './sgr.js';
 import {mcpParts} from './tool-kind.js';
@@ -49,6 +49,21 @@ function agentArgs(input: unknown): string {
 	return type && what ? `${type}: ${what}` : (type ?? what ?? '');
 }
 
+const runCommandArgs: ArgsSummary = input => {
+	const list = typeof input === 'object' && input !== null ? (input as Record<string, unknown>)['commands'] : undefined;
+	if (!Array.isArray(list) || list.length === 0) return inputField(input, 'command');
+	const first = typeof list[0] === 'string' ? list[0] : '';
+	return list.length > 1 ? `${first} (+${list.length - 1} more)` : first;
+};
+
+const readOutputArgs: ArgsSummary = input => {
+	const head = `output ${inputField(input, 'id')}`;
+	const grep = inputField(input, 'grep');
+	if (grep !== '') return `${head} grep ${grep}`;
+	const from = typeof input === 'object' && input !== null ? (input as Record<string, unknown>)['from'] : undefined;
+	return typeof from === 'number' && Number.isFinite(from) ? `${head} from ${from}` : head;
+};
+
 export const ARGS_REGISTRY: Record<string, ArgsSummary> = {
 	AskUserQuestion: questionArgs,
 	Bash: field('command'),
@@ -67,11 +82,15 @@ export const ARGS_REGISTRY: Record<string, ArgsSummary> = {
 	Task: agentArgs,
 	SendMessage: field('to'),
 	LS: field('path'),
-	[RUN_COMMAND_TOOL]: field('command'),
-	[LIST_COMMANDS_TOOL]: () => 'list commands',
+	[RUN_COMMAND_TOOL]: runCommandArgs,
+	[LIST_COMMANDS_TOOL]: input => {
+		const command = inputField(input, 'command').trim();
+		return command === '' ? 'list commands' : `list commands ${command}`;
+	},
+	[READ_OUTPUT_TOOL]: readOutputArgs,
 };
 
-const DISPLAY_NAMES: Record<string, string> = {[RUN_COMMAND_TOOL]: 'Yena', [LIST_COMMANDS_TOOL]: 'Yena'};
+const DISPLAY_NAMES: Record<string, string> = {[RUN_COMMAND_TOOL]: 'Yena', [LIST_COMMANDS_TOOL]: 'Yena', [READ_OUTPUT_TOOL]: 'Yena'};
 
 export function displayName(name: string): string {
 	if (Object.hasOwn(DISPLAY_NAMES, name)) return DISPLAY_NAMES[name]!;

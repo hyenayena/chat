@@ -1,4 +1,4 @@
-import {LIST_COMMANDS_TOOL, RUN_COMMAND_TOOL} from '../public.js';
+import {LIST_COMMANDS_TOOL, READ_OUTPUT_TOOL, RUN_COMMAND_TOOL} from '../public.js';
 import type {GlyphName} from '../kit.js';
 
 export type ToolFamily = 'read' | 'search' | 'edit' | 'shell' | 'web' | 'agent' | 'task' | 'other';
@@ -25,6 +25,7 @@ const FAMILIES: Readonly<Record<string, ToolFamily>> = {
 	NotebookRead: 'read',
 	LS: 'read',
 	[LIST_COMMANDS_TOOL]: 'read',
+	[READ_OUTPUT_TOOL]: 'read',
 	Grep: 'search',
 	Glob: 'search',
 	ToolSearch: 'search',

@@ -15,6 +15,7 @@ const calls: ToolLike[] = [
 	{name: 'Read', input: {file_path: `/${'日本'.repeat(60)}/😀.ts`}, isError: false, text: wide, durationMs: 2000},
 	{name: 'mcp__yena__run_command', input: {command: wide}, isError: false, text: wide},
 	{name: 'mcp__yena__list_commands', input: {}, isError: false, text: wide},
+	{name: 'mcp__yena__read_output', input: {id: 'q7x-3', grep: wide}, isError: false, text: wide},
 	{name: `mcp__${wide}__t`, input: {a: wide}, isError: true, text: wide},
 	{name: 'Agent', input: {subagent_type: 'coder', description: wide}, isError: false, text: wide, durationMs: 90_000},
 ];
@@ -45,5 +46,5 @@ test('success and failure differ by shape, not only by colour', () => {
 });
 
 test('Agent calls and yena console tools never fold', () => {
-	for (const name of ['Agent', 'Task', 'mcp__yena__run_command', 'mcp__yena__list_commands', 'Bash', 'Edit']) assert.equal(isFoldable(name), false, name);
+	for (const name of ['Agent', 'Task', 'mcp__yena__run_command', 'mcp__yena__list_commands', 'mcp__yena__read_output', 'Bash', 'Edit']) assert.equal(isFoldable(name), false, name);
 });
