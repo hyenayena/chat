@@ -45,7 +45,7 @@ import {parseSlash, slashHints, type SlashHints} from './slash.js';
 import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
-import {useViewHost, useTerminalSize} from './kit.js';
+import {useViewHost, useTerminalSize, startFrameTurn, type FrameTurn} from './kit.js';
 import {inkTone, liveRowCap} from '../kit.js';
 import {SHELL_LIMITS, type ShellRunner} from '../contract/shell-context.js';
 import {sendWithTime} from '../send-time.js';
@@ -183,6 +183,7 @@ export function ChatView(props: ChatViewProps) {
 	const branchRef = useRef<string | undefined>(undefined);
 	const readBranchRef = useRef(props.readBranch);
 	readBranchRef.current = props.readBranch;
+	const frameTurnRef = useRef<FrameTurn | undefined>(undefined);
 	const escArmedRef = useRef<number | undefined>(undefined);
 	const lastEventRef = useRef(Date.now());
 	const beatRef = useRef(0);
@@ -425,6 +426,7 @@ export function ChatView(props: ChatViewProps) {
 				}
 			};
 			if (event.type === 'sent') {
+				frameTurnRef.current ??= startFrameTurn();
 				const sentStep = reduceTranscript(tRef.current, event);
 				setT(sentStep.state);
 				printOuts(sentStep.out);
@@ -444,7 +446,14 @@ export function ChatView(props: ChatViewProps) {
 				batchRef.current = event.pending === 0 ? 0 : batchRef.current + 1;
 			}
 			const step = reduceTranscript(tRef.current, event);
-			if (tRef.current.phase === 'idle' && step.state.phase !== 'idle') sinceRef.current = Date.now();
+			if (tRef.current.phase === 'idle' && step.state.phase !== 'idle') {
+				sinceRef.current = Date.now();
+				frameTurnRef.current ??= startFrameTurn();
+			}
+			if (event.type === 'turn-end') {
+				frameTurnRef.current?.end(event.outcome);
+				frameTurnRef.current = undefined;
+			}
 			setT(event.type === 'turn-end' ? {...step.state, notice: undefined} : step.state);
 			if (event.type === 'turn-end') refreshBranch();
 			if (event.type === 'ui' && event.event.kind === 'rate-limit') armLimitReset(event.event.info);
@@ -499,6 +508,7 @@ export function ChatView(props: ChatViewProps) {
 		const unsubscribe = controller.subscribe(feed);
 		return () => {
 			unsubscribe();
+			frameTurnRef.current?.drop();
 			closedRef.current = true;
 			cancelPending();
 			controller.close();

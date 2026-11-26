@@ -162,6 +162,7 @@ Gallery: `ui gallery chat [--width <n>] [--depth <depth>]` (core's command) show
 Through the injected `host.log` (scope of the host's logger; `src/log.ts` is a noop logger when the host gives none).
 - debug `plugin loaded`; warn `gallery section skipped` {section?, err?} (a gallery section did not register).
 - info `shell run` {exitCode?, ms, outputChars, truncated, aborted, timedOut, errClass?} (`src/shell-run.ts`, one per `!` run): counts and outcome only, never the command or its output.
+- Per-turn frame metrics (chat 0.7.10): `ChatView` opens a turn in core's frame collector and ends it at `turn-end` with the outcome; core writes the debug `frames` record in scope `core` (see the core README), chat logs nothing for it.
 
 ## Development
 
