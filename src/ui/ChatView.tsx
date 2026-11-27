@@ -1,6 +1,6 @@
 import {basename} from 'node:path';
 import React, {createElement, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore} from 'react';
-import {Box, Text, useInput, usePaste, type Key} from 'ink';
+import {Box, Text, measureElement, useInput, usePaste, type DOMElement, type Key} from 'ink';
 import type {PrintOptions, ViewHost} from '../../../../src/api.js';
 import type {ChatController, ChatEvent, ChatProfile} from '../public.js';
 import {nounOf} from '../public.js';
@@ -9,7 +9,8 @@ import {MODE_CYCLE} from '../public.js';
 import type {ChatMode, PermissionDecision, PermissionRequest} from '../public.js';
 import {sanitizeMultilineInput, truncateCells, wrapRows} from '../kit.js';
 import {navigate, revealAgent, type PanelMove} from './agent-panel.js';
-import {headerLayout, liveLayout, promptBudget, viewerHeight} from './chat-layout.js';
+import {activityZone, headerLayout, liveLayout, promptBudget, viewerHeight} from './chat-layout.js';
+import {hintRowText} from './hint-row.js';
 import {createAgentStore} from './agent-store.js';
 import {agentViewLines} from './agent-view.js';
 import {focusAgent, hiddenBoxOf, hideBoxes, initialAgents, reconcileAgents, reduceAgents, seedFromTasks} from './agents.js';
@@ -46,7 +47,7 @@ import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
 import {useViewHost, useTerminalSize, startFrameTurn, type FrameTurn} from './kit.js';
-import {frameClock, inkTone, liveRowCap} from '../kit.js';
+import {frameClock, heldRows, inkTone, liveRowCap} from '../kit.js';
 import {SHELL_LIMITS, type ShellRunner} from '../contract/shell-context.js';
 import {sendWithTime} from '../send-time.js';
 import {isShellLine, SHELL_NOTICES, shellCommandOf} from './shell-mode.js';
@@ -231,7 +232,7 @@ export function ChatView(props: ChatViewProps) {
 	const commandListRef = useRef<{at: number; list: ViewCommandInfo[]} | undefined>(undefined);
 	const vimRef = useRef<VimState>(vimStart);
 	const viewerRef = useRef<Viewer | undefined>(undefined);
-	const shownRef = useRef({columns: 0, rows: 0, inputRows: 0, vimNormal: false, statusBar: false, waiting: false, belowInput: 0, panelHeight: 0, topRules: 0, typing: [] as TypingCell[]});
+	const shownRef = useRef({columns: 0, rows: 0, inputRows: 0, vimNormal: false, statusBar: false, waiting: false, belowInput: 0, hintRows: 0, panelHeight: 0, topRules: 0, typing: [] as TypingCell[]});
 	const agentsRef = useRef<ReturnType<typeof createAgentStore> | undefined>(undefined);
 	if (!agentsRef.current) agentsRef.current = createAgentStore(seedFromTasks(initialAgents(), (controller.tasks ?? []).filter(task => !(props.profile && task.subagentType !== undefined && Object.hasOwn(props.profile.agents, task.subagentType)))));
 	const agents = agentsRef.current;
@@ -254,7 +255,11 @@ export function ChatView(props: ChatViewProps) {
 	const render = useCallback(() => setTick(n => n + 1), []);
 	const lastWidthRef = useRef(0);
 	const frameReqRef = useRef<(() => void) | undefined>(undefined);
-	const tailPeakRef = useRef(0);
+	const zoneRef = useRef(0);
+	const menuHeldRef = useRef(0);
+	const keyHintRef = useRef<string | undefined>(undefined);
+	const promptBoxRef = useRef<DOMElement>(null);
+	const promptHeldRef = useRef(0);
 	if (columns > 0) lastWidthRef.current = columns;
 	const shell = useShellRun({runShell: props.runShell, print, scrub, columns: () => lastWidthRef.current || 80});
 	const {peekContext, consumeContext, start: startShell, stop: stopShell, active: shellActive} = shell;
@@ -444,6 +449,7 @@ export function ChatView(props: ChatViewProps) {
 				frameTurnRef.current?.end(event.outcome);
 				frameTurnRef.current = undefined;
 			}
+			if (event.type === 'turn-end') keyHintRef.current = undefined;
 			setT(event.type === 'turn-end' ? {...step.state, notice: undefined} : step.state);
 			if (event.type === 'turn-end') refreshBranch();
 			if (event.type === 'ui' && event.event.kind === 'rate-limit') armLimitReset(event.event.info);
@@ -620,7 +626,8 @@ export function ChatView(props: ChatViewProps) {
 		rememberSent(text);
 		if (t.phase !== 'idle') {
 			if (!steerOrQueue(message)) {
-				setT(setNotice(t, BUSY_HINT));
+				keyHintRef.current = BUSY_HINT;
+				render();
 				return;
 			}
 			edRef.current = emptyEditor;
@@ -700,7 +707,8 @@ export function ChatView(props: ChatViewProps) {
 			const now = Date.now();
 			if (!escapeInterrupts(now, sinceRef.current, escArmedRef.current)) {
 				escArmedRef.current = now;
-				setT(setNotice(tRef.current, ESC_AGAIN_HINT));
+				keyHintRef.current = ESC_AGAIN_HINT;
+				render();
 				return;
 			}
 			escArmedRef.current = undefined;
@@ -780,6 +788,12 @@ export function ChatView(props: ChatViewProps) {
 		const now = Date.now();
 		if (!commandListRef.current || now - commandListRef.current.at > COMMAND_LIST_MS) commandListRef.current = {at: now, list: commands.listCommands()};
 		return slashHints(commandListRef.current.list, ed.text, ed.cursor, MENTION_ROWS);
+	};
+
+	const menuTokenActive = (): boolean => {
+		const ed = edRef.current;
+		if (!mentionRef.current.dismissed && props.files && !isShellLine(ed.text) && mentionAt(ed.text, ed.cursor)) return true;
+		return !commandRef.current.dismissed && commandHost(host) !== undefined && ed.text.startsWith('/');
 	};
 
 	const acceptCommand = (c: SlashHints) => {
@@ -980,7 +994,7 @@ export function ChatView(props: ChatViewProps) {
 	};
 
 	const openTypingAt = (shown: typeof shownRef.current, raw: ViewMouseEvent): boolean => {
-		const below = shown.belowInput + (shown.vimNormal ? 1 : 0) + (shown.statusBar ? 1 : 0);
+		const below = shown.belowInput + shown.hintRows + (shown.statusBar ? 1 : 0);
 		const inputTop = raw.height - below - shown.inputRows;
 		if (raw.y !== inputTop - shown.topRules - 1) return false;
 		const cell = shown.typing.find(c => raw.x >= c.x0 && raw.x < c.x1);
@@ -1011,7 +1025,7 @@ export function ChatView(props: ChatViewProps) {
 		if (controller.pendingPermissions.length > 0 || viewerRef.current || searchRef.current || pendingModeRef.current || agents.get().open !== undefined) return false;
 		if (shown.typing.length > 0 && shown.inputRows >= 1 && openTypingAt(shown, raw)) return true;
 		if (shown.waiting || shown.inputRows < 1) return false;
-		const below = shown.belowInput + (shown.vimNormal ? 1 : 0) + (shown.statusBar ? 1 : 0);
+		const below = shown.belowInput + shown.hintRows + (shown.statusBar ? 1 : 0);
 		const row = shown.inputRows - 1 - (raw.height - 1 - below - raw.y);
 		if (row < 0 || row >= shown.inputRows) return false;
 		const ed = edRef.current;
@@ -1117,6 +1131,7 @@ export function ChatView(props: ChatViewProps) {
 			return escape();
 		}
 		if (key.tab && key.shift) return cycleMode();
+		if (keyHintRef.current !== undefined) keyHintRef.current = undefined;
 		if (tRef.current.notice !== undefined) setT(setNotice(tRef.current, undefined));
 		if (mention) {
 			if (key.upArrow || key.downArrow) {
@@ -1204,7 +1219,18 @@ export function ChatView(props: ChatViewProps) {
 		rearmEntry(p, layoutPrompt(promptBudget(rows, header.height), columns).tier, Date.now(), armMs);
 	});
 
+	useEffect(() => {
+		if (!promptBoxRef.current) return;
+		const measured = measureElement(promptBoxRef.current).height;
+		const held = Math.min(Math.max(0, promptBudget(rows, header.height) - 1), Math.max(promptHeldRef.current, measured));
+		if (held !== promptHeldRef.current) {
+			promptHeldRef.current = held;
+			render();
+		}
+	});
+
 	const prompt = currentPrompt();
+	if (controller.pendingPermissions.length === 0) promptHeldRef.current = 0;
 	const t = tRef.current;
 	const ed = edRef.current;
 	const limit = limitIndicator(t.limit, clock);
@@ -1242,7 +1268,7 @@ export function ChatView(props: ChatViewProps) {
 			scrub={scrub}
 		/>
 	);
-	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, panelHeight: header.height, topRules: 0, typing: [] as TypingCell[]};
+	shownRef.current = {columns, rows, inputRows: 0, vimNormal: false, statusBar: true, waiting: false, belowInput: 0, hintRows: 0, panelHeight: header.height, topRules: 0, typing: [] as TypingCell[]};
 	const headerSlot = headerHost(host) !== undefined;
 	const fallbackPanel = headerSlot ? null : <ChatHeader plan={planStore} agents={agents} {...(host !== undefined && {host})} scrub={scrub} rows={rows} />;
 
@@ -1253,29 +1279,31 @@ export function ChatView(props: ChatViewProps) {
 		return (
 			<Box flexDirection="column">
 				{fallbackPanel}
-				{prompt.request.kind === 'tool' ? (
-					<PermissionPrompt
-						request={prompt.request}
-						state={prompt.state as ToolPromptState}
-						layout={layout}
-						reveal={reveal}
-						position={position}
-						total={total}
-						approvals={t.approvals}
-						notice={t.notice}
-						noun={noun}
-					/>
-				) : (
-					<QuestionPrompt
-						request={prompt.request}
-						state={prompt.state as QuestionPromptState}
-						layout={layout}
-						reveal={reveal}
-						position={position}
-						total={total}
-						notice={t.notice}
-					/>
-				)}
+				<Box ref={promptBoxRef} flexDirection="column" minHeight={promptHeldRef.current}>
+					{prompt.request.kind === 'tool' ? (
+						<PermissionPrompt
+							request={prompt.request}
+							state={prompt.state as ToolPromptState}
+							layout={layout}
+							reveal={reveal}
+							position={position}
+							total={total}
+							approvals={t.approvals}
+							notice={t.notice}
+							noun={noun}
+						/>
+					) : (
+						<QuestionPrompt
+							request={prompt.request}
+							state={prompt.state as QuestionPromptState}
+							layout={layout}
+							reveal={reveal}
+							position={position}
+							total={total}
+							notice={t.notice}
+						/>
+					)}
+				</Box>
 				{statusBar}
 			</Box>
 		);
@@ -1332,49 +1360,49 @@ export function ChatView(props: ChatViewProps) {
 	const typing = props.profile && t.profile ? typingRow(pendingPersonas(t.profile), props.profile, columns, scrub) : undefined;
 	const running = t.phase !== 'idle';
 	const pendingMode = pendingModeRef.current?.mode;
-	const noticeText =
+	const confirmText =
 		pendingMode === 'auto'
-			? `Let a model classifier approve or deny tool calls (Bash and edits included) for this ${noun}? It asks you only when unsure. Enter to confirm, any other key cancels.`
+			? `Enter to confirm, any other key cancels: let a model classifier approve or deny tool calls (Bash and edits included) for this ${noun}? It asks you only when unsure.`
 			: pendingMode
-				? `Auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this ${noun}? Enter to confirm, any other key cancels.`
-				: t.notice;
+				? `Enter to confirm, any other key cancels: auto-accept Edit/Write inside ${scrub(props.projectDir ?? 'the project')} for this ${noun}?`
+				: undefined;
 	const rule = '─'.repeat(Math.max(1, columns - 1));
 	const shellMode = isShellLine(ed.text);
-	const noticeNeeded = noticeText ? Math.ceil(noticeText.length / Math.max(1, columns)) : 0;
-	const mention = activeMention();
-	const command = mention ? undefined : activeCommand();
 	const vimNormal = props.inputMode?.() === 'vim' && vimRef.current.mode === 'normal';
 	const toolCount = tools.length + (t.fold.length > 0 ? 1 : 0);
 	const rawTail = liveTail(t.liveRaw, scrub, LIVE.maxTailRows, columns);
-	if (t.liveRaw === '') tailPeakRef.current = 0;
-	else tailPeakRef.current = Math.max(tailPeakRef.current, Math.min(LIVE.maxTailRows, Math.ceil(rawTail.length / LIVE.tailRowStep) * LIVE.tailRowStep));
-	const wantedTail = tailPeakRef.current;
+	if (t.phase === 'idle' && t.liveRaw === '' && toolCount === 0) zoneRef.current = 0;
+	const zone = activityZone(zoneRef.current, rawTail.length, toolLayout(toolCount, LIVE.maxTools + 1).rows);
+	zoneRef.current = zone.held;
+	const mention = activeMention();
+	const command = mention ? undefined : activeCommand();
+	const menuActive = mention !== undefined || command !== undefined || menuTokenActive();
+	const menuMatches = mention ? mention.matches.length : command ? command.matches.length : 0;
+	menuHeldRef.current = menuActive ? heldRows(menuHeldRef.current, menuMatches) : 0;
 	const live = liveLayout({
 		rows,
 		headerHeight: header.height,
 		inputNeeded: Math.min(LIVE.maxInputRows, inputRowsNeeded(ed.text, columns)),
-		notice: Math.min(noticeNeeded, 2),
-		menu: mention ? mention.matches.length : command ? command.matches.length : 0,
-		vim: vimNormal,
+		hint: 1,
+		menu: menuHeldRef.current,
 		queued: Math.min(3, queueRef.current.length),
 		tools: toolLayout(toolCount, LIVE.maxTools + 1).rows,
 		shell: shellLiveRows(shell.running, shell.pending),
-		tail: wantedTail,
+		tail: zone.tail,
 		typing: typing ? 1 : 0,
 	});
-	const introMax = Math.max(0, liveRowCap(rows) - header.height - live.input - live.rules - live.vim - live.notice - 1);
+	const introMax = Math.max(0, liveRowCap(rows) - header.height - live.input - live.rules - live.hint - 1);
 	const inputRows = live.input;
-	const noticeRows = live.notice;
-	const mentionRows = mention ? live.menu : 0;
-	const commandRows = command ? live.menu : 0;
+	const menuRows = live.menu;
 	const ruleRows = live.rules;
+	const menuShown = mention ? Math.min(menuRows, mention.matches.length) : command ? Math.min(menuRows, command.matches.length) : 0;
 	const commandLabel = (name: string) => `/${[...(command?.path ?? []), name].join(' ')}`;
 	const nameWidth = command ? Math.max(...command.matches.map(c => commandLabel(c.name).length)) + 1 : 0;
 	const queued = queuedLines(queueRef.current, scrub, live.queued);
 	const toolRows = toolLayout(toolCount, live.tools).rows;
 	const tail = live.tail > 0 ? rawTail.slice(-live.tail) : [];
 	while (tail.length < live.tail) tail.push('');
-	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.vim > 0, waiting: running && ed.text === '', belowInput: ruleRows / 2, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
+	shownRef.current = {...shownRef.current, inputRows, vimNormal: vimNormal && live.hint > 0, hintRows: live.hint, waiting: running && ed.text === '', belowInput: ruleRows / 2, topRules: ruleRows / 2, typing: live.typing > 0 && typing ? typing.cells : []};
 
 	return (
 		<Box flexDirection="column">
@@ -1392,19 +1420,14 @@ export function ChatView(props: ChatViewProps) {
 					{line}
 				</Text>
 			))}
-			{noticeRows > 0 && (
-				<Text dimColor wrap={noticeRows >= noticeNeeded ? 'wrap' : 'truncate'}>
-					{noticeText}
-				</Text>
-			)}
 			{mention &&
-				mention.matches.slice(0, mentionRows).map((file, i) => (
+				mention.matches.slice(0, menuRows).map((file, i) => (
 					<Text key={`mention-${file}`} wrap="truncate" inverse={i === Math.min(mentionRef.current.selected, mention.matches.length - 1)}>
 						{`  @${scrub(file)}`}
 					</Text>
 				))}
 			{command &&
-				command.matches.slice(0, commandRows).map((c, i) => {
+				command.matches.slice(0, menuRows).map((c, i) => {
 					const selected = i === Math.min(commandRef.current.selected, command.matches.length - 1);
 					return (
 						<Text key={`command-${c.name}`} wrap="truncate">
@@ -1413,6 +1436,9 @@ export function ChatView(props: ChatViewProps) {
 						</Text>
 					);
 				})}
+			{Array.from({length: Math.max(0, menuRows - menuShown)}, (_, i) => (
+				<Text key={`menu-pad-${i}`}> </Text>
+			))}
 			{live.typing > 0 && typing && <Text wrap="truncate">{typing.text}</Text>}
 			{ruleRows > 0 && <Text {...(shellMode ? inkTone('shell') : {dimColor: true})}>{rule}</Text>}
 			{searchRef.current ? (
@@ -1424,7 +1450,11 @@ export function ChatView(props: ChatViewProps) {
 				<InputLine text={ed.text} cursor={ed.cursor} columns={columns} maxRows={inputRows} shell={shellMode} />
 			)}
 			{ruleRows > 0 && <Text {...(shellMode ? inkTone('shell') : {dimColor: true})}>{rule}</Text>}
-			{live.vim > 0 && <Text dimColor>-- NORMAL --</Text>}
+			{live.hint > 0 && (
+				<Text dimColor wrap="truncate">
+					{hintRowText({keyHint: keyHintRef.current, confirm: confirmText, notice: t.notice, vimNormal}, Math.max(1, columns - 1)) || ' '}
+				</Text>
+			)}
 			{statusBar}
 		</Box>
 	);

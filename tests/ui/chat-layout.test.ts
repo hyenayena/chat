@@ -4,7 +4,7 @@ import type {ChatEvent, PlanItem} from '../../src/public.js';
 import {fixedRowBudget, liveRowCap, ROW_BREAKPOINTS} from '../../src/kit.js';
 import {PANEL} from '../../src/ui/agent-panel.js';
 import {initialAgents, reduceAgents, type AgentsState} from '../../src/ui/agents.js';
-import {headerLayout, liveLayout, SHELL_LIVE_MAX_ROWS, promptBudget, viewerHeight, type LiveHeights, type LiveNeeds} from '../../src/ui/chat-layout.js';
+import {activityZone, headerLayout, liveLayout, SHELL_LIVE_MAX_ROWS, promptBudget, viewerHeight, type LiveHeights, type LiveNeeds} from '../../src/ui/chat-layout.js';
 import type {PlanView} from '../../src/ui/plan-widget.js';
 
 const scrub = (s: string) => s;
@@ -21,16 +21,15 @@ const needs = (patch: Partial<LiveNeeds> = {}): LiveNeeds => ({
 	rows: 24,
 	headerHeight: 0,
 	inputNeeded: 4,
-	notice: 0,
+	hint: 1,
 	menu: 0,
-	vim: false,
 	queued: 2,
 	tools: 3,
 	tail: 8,
 	...patch,
 });
 
-const frameOf = (h: LiveHeights, status = 1): number => h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.shell + h.tail + h.rules + status;
+const frameOf = (h: LiveHeights, status = 1): number => h.input + h.hint + h.menu + h.queued + h.tools + h.shell + h.tail + h.rules + status;
 
 test('header plus live area stay within the fixed budget and the frame within the live cap', () => {
 	for (const columns of COLUMNS) {
@@ -58,10 +57,10 @@ test('below 12 rows only the status bar, the input and what is bound to the inpu
 	for (const rows of ROWS.filter(r => r < ROW_BREAKPOINTS.short)) {
 		const header = headerLayout(plan(), agents(3), {rows, columns: 100, scrub});
 		assert.equal(header.height, 0, `rows ${rows}`);
-		const live = liveLayout(needs({rows, notice: 2, menu: 3, vim: true}));
+		const live = liveLayout(needs({rows, menu: 3}));
 		assert.equal(live.queued + live.tools + live.tail + live.rules, 0, `rows ${rows}`);
 		assert.equal(live.input, 1, `rows ${rows}`);
-		assert.ok(live.notice >= 1 && live.menu >= 1 && live.vim === 1, `rows ${rows}: ${JSON.stringify(live)}`);
+		assert.ok(live.hint === 1 && live.menu >= 1, `rows ${rows}: ${JSON.stringify(live)}`);
 		assert.ok(frameOf(live) <= liveRowCap(rows) || rows < 6, `rows ${rows}: ${frameOf(live)}`);
 	}
 });
@@ -70,15 +69,14 @@ test('the live parts drop in the documented order as the room shrinks', () => {
 	const order: [string, (h: LiveHeights) => boolean][] = [
 		['tail', h => h.tail > 0],
 		['queued', h => h.queued > 0],
-		['rules', h => h.rules > 0],
 		['tools', h => h.tools > 0],
-		['vim', h => h.vim > 0],
+		['rules', h => h.rules > 0],
 		['menu', h => h.menu > 0],
-		['notice', h => h.notice > 0],
+		['hint', h => h.hint > 0],
 	];
 	for (const rows of ROWS.filter(r => r >= ROW_BREAKPOINTS.short)) {
 		for (let headerHeight = 0; headerHeight <= liveRowCap(rows) - 2; headerHeight++) {
-			const live = liveLayout(needs({rows, headerHeight, notice: 1, menu: 1, vim: true}));
+			const live = liveLayout(needs({rows, headerHeight, menu: 1}));
 			order.forEach(([name, present], i) => {
 				if (!present(live)) return;
 				for (const [later, laterPresent] of order.slice(i + 1)) assert.ok(laterPresent(live), `${rows}/${headerHeight}: ${name} is shown but ${later} is not: ${JSON.stringify(live)}`);
@@ -88,13 +86,17 @@ test('the live parts drop in the documented order as the room shrinks', () => {
 	}
 });
 
-test('extra input rows drop before the rules around the input, those before extra tool rows', () => {
-	const live = liveLayout(needs({rows: 24, headerHeight: 8, inputNeeded: 6, tools: 4}));
-	assert.equal(live.budget, 4);
+test('the rules around the input outrank every tool row, and the tool rows outrank extra input rows', () => {
+	const squeezed = liveLayout(needs({rows: 24, headerHeight: 8, inputNeeded: 6, tools: 4}));
+	assert.equal(squeezed.budget, 4);
+	assert.equal(squeezed.rules, 0, 'two rule rows do not fit in the one spare row, and nothing below them is shown');
+	assert.equal(squeezed.tools, 0);
+	assert.equal(squeezed.input, 1);
+	const live = liveLayout(needs({rows: 24, headerHeight: 6, inputNeeded: 6, tools: 4}));
 	assert.equal(frameOf(live), live.used);
-	assert.equal(live.rules, 0, 'the rules go before the extra tool rows');
+	assert.equal(live.rules, 2, 'a growing tool list cannot take the rules');
+	assert.equal(live.tools, 1);
 	assert.equal(live.input, 1);
-	assert.equal(live.tools, 2, 'the freed row goes to a second tool row, not to the input');
 });
 
 test('at 24 rows a full agent box still fits, and the live tail is squeezed while the boxes are full', () => {
@@ -103,7 +105,7 @@ test('at 24 rows a full agent box still fits, and the live tail is squeezed whil
 	assert.equal(fixedRowBudget(24), 12);
 	const live = liveLayout(needs({rows: 24, headerHeight: header.height}));
 	assert.equal(live.tail, 0);
-	assert.ok(live.input >= 1 && live.tools >= 1);
+	assert.ok(live.input >= 1);
 	assert.ok(header.height + live.used <= 12);
 	const calm = liveLayout(needs({rows: 24, headerHeight: 0}));
 	assert.ok(calm.tail > 0);
@@ -154,7 +156,7 @@ test('the typing row drops with the extra tool rows and never shows in the tiny 
 		const h = liveLayout(needs({rows, typing: 1, headerHeight: 0}));
 		assert.ok(h.typing <= 1);
 		if (h.typing === 1) assert.ok(h.tools >= 1, `${rows}`);
-		assert.ok(h.input + h.notice + h.menu + h.vim + h.queued + h.tools + h.tail + h.rules + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
+		assert.ok(h.input + h.hint + h.menu + h.queued + h.tools + h.tail + h.rules + h.typing + 1 <= Math.max(liveRowCap(rows), 3), `${rows}`);
 	}
 });
 
@@ -176,6 +178,26 @@ test('the tiny tier keeps no shell rows unless the one row fits', () => {
 		assert.ok(live.shell <= 1, `rows ${rows}: ${JSON.stringify(live)}`);
 		if (live.shell === 1) assert.ok(frameOf(live) <= liveRowCap(rows), `rows ${rows}`);
 	}
-	const squeezed = liveLayout(needs({rows: 24, headerHeight: 8, inputNeeded: 1, shell: 5, tools: 0, queued: 0, tail: 0}));
+	const squeezed = liveLayout(needs({rows: 24, headerHeight: 6, inputNeeded: 1, shell: 5, tools: 0, queued: 0, tail: 0}));
 	assert.ok(squeezed.shell >= 1);
+});
+
+test('the hint row is one fixed row that is kept in every tier', () => {
+	for (const rows of ROWS) {
+		const live = liveLayout(needs({rows, tools: 4, tail: 20, menu: 3}));
+		assert.equal(live.hint, 1, `rows ${rows}`);
+	}
+	assert.equal(liveLayout(needs({rows: 24, hint: 0})).hint, 0);
+});
+
+test('the activity zone grows in tail steps, counts tool rows and never shrinks', () => {
+	assert.deepEqual(activityZone(0, 0, 0), {held: 0, tail: 0});
+	assert.deepEqual(activityZone(0, 3, 0), {held: 4, tail: 4});
+	assert.deepEqual(activityZone(4, 5, 0), {held: 8, tail: 8});
+	assert.deepEqual(activityZone(8, 1, 0), {held: 8, tail: 8});
+	assert.deepEqual(activityZone(8, 1, 2), {held: 8, tail: 6});
+	assert.deepEqual(activityZone(8, 0, 3), {held: 8, tail: 5});
+	assert.deepEqual(activityZone(0, 0, 2), {held: 2, tail: 0});
+	assert.deepEqual(activityZone(0, 1000, 5), {held: 30, tail: 25});
+	assert.deepEqual(activityZone(NaN, NaN, NaN), {held: 0, tail: 0});
 });

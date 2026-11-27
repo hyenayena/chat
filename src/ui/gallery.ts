@@ -298,9 +298,8 @@ export const layoutGallerySection: GallerySection = {
 				rows,
 				headerHeight: head.height,
 				inputNeeded: 1,
-				notice: 0,
+				hint: 1,
 				menu: 0,
-				vim: false,
 				queued: 0,
 				tools: tools.length,
 				tail: streamed.length,
@@ -315,6 +314,7 @@ export const layoutGallerySection: GallerySection = {
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
 				paintTone('> ', 'muted', depth),
 				...(live.rules > 0 ? [paintTone(rule, 'muted', depth)] : []),
+				...(live.hint > 0 ? [paintTone('Press Esc again to interrupt', 'muted', depth)] : []),
 				bar.chatStatusRow({...status, mode: 'acceptEdits', panelShown: head.panel.height > 0}, width - 1, {frame: spinnerFrame(0, {ascii}), depth, ascii}),
 			];
 			const filler = Array.from({length: Math.max(0, rows - frame.length)}, () => paintTone('· transcript ·', 'muted', depth));

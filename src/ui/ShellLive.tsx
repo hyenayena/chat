@@ -7,7 +7,7 @@ import type {Scrub} from './tool-args.js';
 import type {RunningShell} from './use-shell-run.js';
 
 export const shellLiveRows = (running: RunningShell | undefined, pending: number): number => {
-	if (running) return Math.min(SHELL_LIVE_MAX_ROWS, 1 + running.live.lines.length);
+	if (running) return SHELL_LIVE_MAX_ROWS;
 	return pending > 0 ? 1 : 0;
 };
 
@@ -23,7 +23,7 @@ export function ShellLive({running, pending, width, maxRows, scrub, now}: {runni
 	const elapsed = formatElapsed((now ?? Date.now()) - running.startedAt);
 	const head = truncateCells(`${frame} ${glyph('shell')} ${scrub(running.command).replace(/\s+/g, ' ')} · ${elapsed}`, width);
 	return (
-		<Box flexDirection="column">
+		<Box flexDirection="column" minHeight={maxRows}>
 			<Text {...inkTone('shell')}>{head}</Text>
 			{maxRows > 1 && running.live.lines.length > 0 && <OutputTail lines={running.live.lines.map(scrub)} width={width} rows={maxRows - 1} />}
 		</Box>

@@ -536,7 +536,7 @@ test('Shift+Tab asks for confirmation before accept-edits; Enter applies it', as
 	await t.settle();
 	t.press(SHIFT_TAB);
 	await t.settle(ARM + 50);
-	assert.match(t.lastFrame().replace(/\s+/g, ' '), /Auto-accept Edit\/Write inside \/app for this chat\? Enter to confirm, any other key cancels\./);
+	assert.match(t.lastFrame().replace(/\s+/g, ' '), /Enter to confirm, any other key cancels: auto-accept Edit\/Write/);
 	assert.equal(t.controller.calls.modes.length, 0);
 	t.press(ENTER);
 	await t.settle();
@@ -549,7 +549,7 @@ test('Shift+Tab asks for confirmation before accept-edits; Enter applies it', as
 	assert.match(t.lastFrame(), /⏸ plan/);
 	t.press(SHIFT_TAB);
 	await t.settle(ARM + 50);
-	assert.match(t.lastFrame().replace(/\s+/g, ' '), /Let a model classifier approve or deny tool calls/);
+	assert.match(t.lastFrame().replace(/\s+/g, ' '), /Enter to confirm, any other key cancels: let a model classifier/);
 	assert.deepEqual(t.controller.calls.modes, ['acceptEdits', 'plan']);
 	t.press(ENTER);
 	await t.settle();
@@ -1053,12 +1053,12 @@ test('mouse: a click on the input moves the cursor there; malformed events are i
 	assert.equal(m.listeners.length, 1);
 	t.press('hello world');
 	await t.settle();
-	assert.equal(m.click(7, 8), false);
-	assert.equal(m.click(7, 7), true);
-	assert.equal(m.send({kind: 'press', button: 'left', x: 60, y: 7}), false);
-	assert.equal(m.send({kind: 'press', button: 'left', x: 2, y: 7, width: 'x'}), false);
+	assert.equal(m.click(7, 7), false);
+	assert.equal(m.click(7, 6), true);
+	assert.equal(m.send({kind: 'press', button: 'left', x: 60, y: 6}), false);
+	assert.equal(m.send({kind: 'press', button: 'left', x: 2, y: 6, width: 'x'}), false);
 	assert.equal(m.click(7, 2), false);
-	assert.equal(m.send({kind: 'press', button: 'right', x: 2, y: 7}), false);
+	assert.equal(m.send({kind: 'press', button: 'right', x: 2, y: 6}), false);
 	t.press('X');
 	await t.settle();
 	t.press(ENTER);
@@ -1327,7 +1327,7 @@ test('the input sits between two rules; the mode shows in the status bar', async
 	assert.match(t.lastFrame(), new RegExp(`${rule}\\n> ?\\n${rule}`));
 	t.controller.setMode('plan');
 	await t.settle();
-	assert.match(t.lastFrame(), new RegExp(`${rule}\\n[^\\n]*⏸ plan`));
+	assert.match(t.lastFrame(), new RegExp(`${rule}\\n[^\\n]*\\n[^\\n]*⏸ plan`));
 	assert.doesNotMatch(t.lastFrame(), /shift\+tab/);
 });
 
@@ -1661,11 +1661,12 @@ test('the live frame has no empty rule, tool or header block when nothing fills 
 	await t.settle(30);
 	const lines = plainFrame(t).replace(/\n+$/, '').split('\n');
 	assert.equal(lines.filter(l => /^─+$/.test(l)).length, 2, 'the rules around the input');
-	assert.ok(lines.every(l => l.trim() !== ''), 'no blank row in the idle frame');
+	const blank = lines.map((l, i) => (l.trim() === '' ? i : -1)).filter(i => i >= 0);
+	assert.deepEqual(blank, [lines.length - 2], 'only the hint row above the status bar is blank in the idle frame');
 	const small = setup({columns: 80, rows: 8});
 	await small.settle(30);
 	const tiny = plainFrame(small).replace(/\n+$/, '').split('\n');
-	assert.ok(tiny.length <= 2, `${tiny.length} rows at 8 rows`);
+	assert.ok(tiny.length <= 3, `${tiny.length} rows at 8 rows`);
 	assert.equal(tiny.filter(l => /^─+$/.test(l)).length, 0);
 });
 

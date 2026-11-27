@@ -1,8 +1,9 @@
-import {allocateRows, fixedRowBudget, liveRowCap, rowTier, type RowPart} from '../kit.js';
+import {allocateRows, fixedRowBudget, heldRows, liveRowCap, rowTier, type RowPart} from '../kit.js';
 import {layoutPanel, PANEL, type PanelLayout} from './agent-panel.js';
 import type {AgentsState} from './agents.js';
 import {PLAN, planWidgetRows, type PlanView} from './plan-widget.js';
 import type {Scrub} from './tool-args.js';
+import {LIVE} from './transcript.js';
 
 export type HeaderLook = {rows: number; columns: number; scrub: Scrub; spinner?: string};
 
@@ -46,9 +47,8 @@ export type LiveNeeds = {
 	rows: number;
 	headerHeight: number;
 	inputNeeded: number;
-	notice: number;
+	hint: number;
 	menu: number;
-	vim: boolean;
 	queued: number;
 	tools: number;
 	shell?: number;
@@ -58,9 +58,8 @@ export type LiveNeeds = {
 
 export type LiveHeights = {
 	input: number;
-	notice: number;
+	hint: number;
 	menu: number;
-	vim: number;
 	queued: number;
 	tools: number;
 	shell: number;
@@ -78,27 +77,25 @@ export const SHELL_LIVE_MAX_ROWS = 6;
 // Priorities run opposite to the drop order: the live tail goes first, the status bar never.
 export function liveLayout(needs: LiveNeeds): LiveHeights {
 	const {rows} = needs;
-	const notice = want(needs.notice);
+	const hint = Math.min(1, want(needs.hint));
 	const menu = want(needs.menu);
 	const queued = want(needs.queued);
 	const tools = want(needs.tools);
 	const shell = Math.min(SHELL_LIVE_MAX_ROWS, want(needs.shell ?? 0));
 	const tail = want(needs.tail);
 	const input = Math.max(1, want(needs.inputNeeded));
-	const vim = needs.vim ? 1 : 0;
 	const typing = rowTier(rows) === 'tiny' ? 0 : Math.min(1, want(needs.typing ?? 0));
 	const parts: RowPart[] = [
 		{id: 'status', min: 1, desired: 1, priority: 100, fixed: true},
 		{id: 'input', min: 1, desired: 1, priority: 90, fixed: true},
-		{id: 'notice', min: Math.min(1, notice), desired: notice, priority: 80, fixed: true},
+		{id: 'hint', min: hint, desired: hint, priority: 80, fixed: true},
 		{id: 'menu', min: Math.min(1, menu), desired: menu, priority: 75, fixed: true},
-		{id: 'vim', min: vim, desired: vim, priority: 70, fixed: true},
 		{id: 'shellMin', min: Math.min(1, shell), desired: Math.min(1, shell), priority: 65},
 		{id: 'toolMin', min: Math.min(1, tools), desired: Math.min(1, tools), priority: 60},
 		{id: 'toolExtra', min: 0, desired: Math.max(0, tools - 1), priority: 50},
 		{id: 'shellExtra', min: 0, desired: Math.max(0, shell - 1), priority: 45},
 		{id: 'typing', min: 0, desired: typing, priority: 50},
-		{id: 'rules', min: 2, desired: 2, priority: 40},
+		{id: 'rules', min: 2, desired: 2, priority: 68},
 		{id: 'inputExtra', min: 0, desired: input - 1, priority: 30},
 		{id: 'queued', min: Math.min(1, queued), desired: queued, priority: 10},
 		{id: 'tail', min: Math.min(1, tail), desired: tail, priority: 5},
@@ -110,9 +107,8 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 	const h = alloc.heights;
 	return {
 		input: 1 + (h.inputExtra ?? 0),
-		notice: h.notice ?? 0,
+		hint: h.hint ?? 0,
 		menu: h.menu ?? 0,
-		vim: h.vim ?? 0,
 		queued: h.queued ?? 0,
 		tools: (h.toolMin ?? 0) + (h.toolExtra ?? 0),
 		shell: (h.shellMin ?? 0) + (h.shellExtra ?? 0),
@@ -128,3 +124,12 @@ export function liveLayout(needs: LiveNeeds): LiveHeights {
 export const promptBudget = (rows: number, headerHeight: number): number => Math.max(0, liveRowCap(rows) - headerHeight);
 
 export const viewerHeight = (rows: number, headerHeight: number): number => Math.max(3, liveRowCap(rows) - headerHeight - 2);
+
+// The tail grows in steps and the tool list in single rows; the zone never shrinks within a turn.
+export function activityZone(held: number, tail: number, tools: number): {held: number; tail: number} {
+	const t = want(tail);
+	const k = want(tools);
+	const wanted = (t > 0 ? Math.ceil(t / LIVE.tailRowStep) * LIVE.tailRowStep : 0) + k;
+	const next = heldRows(held, wanted, {max: LIVE.maxTailRows});
+	return {held: next, tail: Math.max(0, next - k)};
+}
