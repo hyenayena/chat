@@ -4,7 +4,7 @@ import {NO_ANSWER_TEXT, nounOf} from './contract/profile.js';
 import type {ChatProvider, OpenedChat, OpenEnv, OpenRequest} from './contract/provider.js';
 import type {ShellFeed} from './contract/shell.js';
 import {clockTime} from './clock-time.js';
-import {colorDepth, type ColorDepth} from './kit.js';
+import {colorDepth, reducedMotion, type ColorDepth} from './kit.js';
 import {readGitBranch} from './git-head.js';
 import {errClass, noopLog} from './log.js';
 import type {ProfileStore} from './profile-bindings.js';
@@ -43,8 +43,8 @@ export type FlowDeps = {
 
 const defaultIsTTY = (): boolean => process.stdout.isTTY === true;
 
-export const bannerAnimationOn = (o: {pref: boolean; depth: ColorDepth; tty: boolean; headless: boolean}): boolean =>
-	o.pref && o.depth !== 'none' && o.tty && !o.headless;
+export const bannerAnimationOn = (o: {pref: boolean; depth: ColorDepth; tty: boolean; headless: boolean; reduced: boolean}): boolean =>
+	o.pref && o.depth !== 'none' && o.tty && !o.headless && !o.reduced;
 
 export const isMissingModule = (err: unknown): boolean => {
 	const code = (err as {code?: unknown} | null)?.code;
@@ -185,7 +185,7 @@ export async function runChatView(provider: ChatProvider, req: FlowRequest, ctx:
 			chatHost = control.host;
 			intro =
 				fresh &&
-				bannerAnimationOn({pref: deps.bannerAnimation?.() ?? true, depth: colorDepth(), tty: (deps.isTTY ?? defaultIsTTY)(), headless: ctx.headless === true}) &&
+				bannerAnimationOn({pref: deps.bannerAnimation?.() ?? true, depth: colorDepth(), tty: (deps.isTTY ?? defaultIsTTY)(), headless: ctx.headless === true, reduced: reducedMotion()}) &&
 				ui.bannerAnimates(Math.max(1, (control.host?.columns() || 80) - 1))
 					? ui.createBannerIntro({render: banner, columns: () => chatHost?.columns() || 80, print: base})
 					: undefined;

@@ -13,7 +13,6 @@ export const LIVE = {
 	tailChars: 16_000,
 	tailStepChars: 4_000,
 	tailRowStep: 4,
-	frameMs: 50,
 	maxTools: 4,
 	maxInputRows: 10,
 	minTailRows: 3,

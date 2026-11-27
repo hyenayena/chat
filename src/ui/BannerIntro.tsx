@@ -1,5 +1,6 @@
 import React, {useEffect, useSyncExternalStore} from 'react';
 import {Box, Text} from 'ink';
+import {useReducedMotion} from './kit.js';
 import type {BannerIntro as Intro} from './banner-intro.js';
 
 export function BannerIntro(props: {intro: Intro; columns: number; maxRows: number}) {
@@ -8,8 +9,9 @@ export function BannerIntro(props: {intro: Intro; columns: number; maxRows: numb
 		cb => intro.subscribe(cb),
 		() => intro.frame(Math.max(1, columns - 1)).join('\n') + (intro.active() ? '' : '\u0000'),
 	);
+	const reduced = useReducedMotion();
 	const rows = intro.active() ? intro.frame(Math.max(1, columns - 1)) : [];
-	const skip = rows.length === 0 || rows.length > maxRows;
+	const skip = reduced || rows.length === 0 || rows.length > maxRows;
 	useEffect(() => {
 		if (skip) intro.finish();
 	}, [skip, intro, version]);

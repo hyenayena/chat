@@ -1,9 +1,10 @@
 import type {PrintOptions} from '../../../../src/api.js';
+import {frameClock} from '../kit.js';
 import {PAW_STEPS} from './banner.js';
 
 export const INTRO_FRAME_MS = 200;
 export const GLINT_FRAMES = 16;
-export const GLINT_FRAME_MS = 40;
+export const GLINT_FRAME_MS = 50;
 
 export type BannerIntro = {
 	active(): boolean;
@@ -23,11 +24,7 @@ type IntroOptions = {
 	schedule?: (fn: () => void, ms: number) => () => void;
 };
 
-const defaultSchedule = (fn: () => void, ms: number): (() => void) => {
-	const t = setTimeout(fn, ms);
-	t.unref();
-	return () => clearTimeout(t);
-};
+const defaultSchedule = (fn: () => void, ms: number): (() => void) => frameClock.schedule(fn, ms);
 
 export function createBannerIntro(o: IntroOptions): BannerIntro {
 	const schedule = o.schedule ?? defaultSchedule;

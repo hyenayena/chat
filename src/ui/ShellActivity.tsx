@@ -3,7 +3,7 @@ import {Box, Text} from 'ink';
 import type {ViewHost} from '../../../../src/api.js';
 import type {ShellFeed} from '../public.js';
 import type {ShellSnapshot} from '../public.js';
-import {OutputTail, useSpinner, useViewHost} from './kit.js';
+import {OutputTail, useFrame, useSpinner, useViewHost} from './kit.js';
 
 export type ShellActivityProps = {
 	watch: ShellFeed;
@@ -16,16 +16,12 @@ const DEFAULT_ROWS = 20;
 export function ShellActivity({watch, host, now = Date.now}: ShellActivityProps) {
 	const {columns} = useViewHost(host);
 	const [snap, setSnap] = useState<ShellSnapshot>(() => watch.get());
-	const [, setTick] = useState(0);
+	useFrame(snap.calls.length > 0, 1000);
 	const frame = useSpinner(snap.calls.length > 0);
 	useEffect(() => {
 		setSnap(watch.get());
 		return watch.subscribe(() => setSnap(watch.get()));
 	}, [watch]);
-	useEffect(() => {
-		const timer = setInterval(() => setTick(t => t + 1), 1000);
-		return () => clearInterval(timer);
-	}, []);
 
 	const calls = snap.calls;
 	const rows = Math.max(4, (host?.rows?.() ?? DEFAULT_ROWS) - 1);

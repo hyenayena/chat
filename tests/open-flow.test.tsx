@@ -408,12 +408,13 @@ test('a resumed direction-mode chat skips assistant history and prints the saved
 });
 
 test('the banner animation needs the pref, a colour depth, a terminal and no headless run', () => {
-	const on = {pref: true, depth: '16' as ColorDepth, tty: true, headless: false};
+	const on = {pref: true, depth: '16' as ColorDepth, tty: true, headless: false, reduced: false};
 	assert.equal(bannerAnimationOn(on), true);
 	assert.equal(bannerAnimationOn({...on, pref: false}), false);
 	assert.equal(bannerAnimationOn({...on, depth: 'none'}), false);
 	assert.equal(bannerAnimationOn({...on, tty: false}), false);
 	assert.equal(bannerAnimationOn({...on, headless: true}), false);
+	assert.equal(bannerAnimationOn({...on, reduced: true}), false);
 });
 
 async function animated(opts: {depth?: ColorDepth; pref?: boolean; tty?: boolean} = {}, popts: Parameters<typeof makeProvider>[0] = {}, req: Partial<Parameters<typeof runChatView>[1]> = {}) {

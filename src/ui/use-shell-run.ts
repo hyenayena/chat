@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import type {PrintOptions} from '../../../../src/api.js';
+import {frameClock} from '../kit.js';
 import type {ShellRun, ShellRunner} from '../contract/shell-context.js';
 import {formatShellBlock} from './shell-block.js';
 import {addPending, EMPTY_LIVE, pendingContext, pushLive, type LiveLines} from './shell-mode.js';
@@ -41,7 +42,7 @@ export function useShellRun(o: ShellRunOptions): ShellControls {
 	latest.current = o;
 	const runningRef = useRef<{view: RunningShell; controller: AbortController} | undefined>(undefined);
 	const pendingRef = useRef<ShellRun[]>([]);
-	const timerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+	const timerRef = useRef<(() => void) | undefined>(undefined);
 	const aliveRef = useRef(true);
 	const [, setTick] = useState(0);
 	const bump = useCallback(() => setTick(n => n + 1), []);
@@ -50,7 +51,7 @@ export function useShellRun(o: ShellRunOptions): ShellControls {
 		aliveRef.current = true;
 		return () => {
 			aliveRef.current = false;
-			clearTimeout(timerRef.current);
+			timerRef.current?.();
 			runningRef.current?.controller.abort();
 		};
 	}, []);
@@ -66,7 +67,7 @@ export function useShellRun(o: ShellRunOptions): ShellControls {
 			bump();
 			const finish = (run: ShellRun) => {
 				if (runningRef.current === entry) runningRef.current = undefined;
-				clearTimeout(timerRef.current);
+				timerRef.current?.();
 				timerRef.current = undefined;
 				if (!aliveRef.current) return;
 				pendingRef.current = addPending(pendingRef.current, run);
@@ -78,7 +79,7 @@ export function useShellRun(o: ShellRunOptions): ShellControls {
 			const onOutput = (_stream: 'stdout' | 'stderr', text: string) => {
 				if (runningRef.current !== entry) return;
 				entry.view = {...entry.view, live: pushLive(entry.view.live, text)};
-				timerRef.current ??= setTimeout(() => {
+				timerRef.current ??= frameClock.schedule(() => {
 					timerRef.current = undefined;
 					if (aliveRef.current && runningRef.current === entry) bump();
 				}, LIVE_THROTTLE_MS);

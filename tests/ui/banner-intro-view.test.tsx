@@ -3,7 +3,7 @@ import {afterEach, test} from 'node:test';
 import React, {createElement} from 'react';
 void React;
 import {makeScrub} from '../../src/contract/scrub.js';
-import {stringCells, stripStyles} from '../../src/kit.js';
+import {setMotionPref, stringCells, stripStyles} from '../../src/kit.js';
 import {createBannerIntro} from '../../src/ui/banner-intro.js';
 import {ChatView} from '../../src/ui/ChatView.js';
 import {fakeController, mountHarness} from './testkit.js';
@@ -72,4 +72,18 @@ test('typed keys during the intro are all kept', async () => {
 	await s.h.settle();
 	assert.equal(s.intro.active(), false);
 	assert.match(stripStyles(s.h.lastFrame()), /abc/);
+});
+
+test('reduced motion finishes the intro at once', async () => {
+	const s = setup();
+	await s.h.settle();
+	assert.equal(s.intro.active(), true);
+	setMotionPref(true);
+	try {
+		await s.h.settle();
+		assert.equal(s.intro.active(), false);
+		assert.ok(s.printed.some(p => p.includes('ok')));
+	} finally {
+		setMotionPref(false);
+	}
 });

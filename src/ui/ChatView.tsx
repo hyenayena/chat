@@ -46,7 +46,7 @@ import {commandHost, type ViewCommandInfo} from './view-commands.js';
 import {ChatStatusBar} from './ChatStatusBar.js';
 import {turnFilesRows} from './turn-summary.js';
 import {useViewHost, useTerminalSize, startFrameTurn, type FrameTurn} from './kit.js';
-import {inkTone, liveRowCap} from '../kit.js';
+import {frameClock, inkTone, liveRowCap} from '../kit.js';
 import {SHELL_LIMITS, type ShellRunner} from '../contract/shell-context.js';
 import {sendWithTime} from '../send-time.js';
 import {isShellLine, SHELL_NOTICES, shellCommandOf} from './shell-mode.js';
@@ -253,8 +253,7 @@ export function ChatView(props: ChatViewProps) {
 	const [, setTick] = useState(0);
 	const render = useCallback(() => setTick(n => n + 1), []);
 	const lastWidthRef = useRef(0);
-	const deltaTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-	const lastFrameRef = useRef(0);
+	const frameReqRef = useRef<(() => void) | undefined>(undefined);
 	const tailPeakRef = useRef(0);
 	if (columns > 0) lastWidthRef.current = columns;
 	const shell = useShellRun({runShell: props.runShell, print, scrub, columns: () => lastWidthRef.current || 80});
@@ -271,28 +270,19 @@ export function ChatView(props: ChatViewProps) {
 			}
 			const streaming = next.liveRaw !== prevRaw && next.liveRaw !== '' && prevRaw !== '';
 			if (!streaming) {
-				if (deltaTimerRef.current) clearTimeout(deltaTimerRef.current);
-				deltaTimerRef.current = undefined;
-				lastFrameRef.current = Date.now();
+				frameReqRef.current?.();
+				frameReqRef.current = undefined;
 				render();
 				return;
 			}
-			const wait = LIVE.frameMs - (Date.now() - lastFrameRef.current);
-			if (wait <= 0) {
-				lastFrameRef.current = Date.now();
+			frameReqRef.current ??= frameClock.schedule(() => {
+				frameReqRef.current = undefined;
 				render();
-			} else if (!deltaTimerRef.current) {
-				deltaTimerRef.current = setTimeout(() => {
-					deltaTimerRef.current = undefined;
-					lastFrameRef.current = Date.now();
-					render();
-				}, wait);
-				deltaTimerRef.current.unref?.();
-			}
+			});
 		},
 		[render, planStore],
 	);
-	useEffect(() => () => clearTimeout(deltaTimerRef.current), []);
+	useEffect(() => () => frameReqRef.current?.(), []);
 	const undoRef = useRef<EditorState[]>([]);
 	const edit = useCallback(
 		(...actions: EditorAction[]) => {

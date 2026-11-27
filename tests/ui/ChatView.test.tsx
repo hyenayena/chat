@@ -182,6 +182,15 @@ test('streaming text stays in the live tail; the full block goes to print', asyn
 	assert.equal(t.printed.filter(p => p.includes('streaming now done')).length, 1);
 });
 
+test('streaming deltas render on the next clock tick', async () => {
+	const t = setup();
+	t.controller.setState('running');
+	t.controller.ui({kind: 'text-delta', text: 'first part'});
+	t.controller.ui({kind: 'text-delta', text: ' second part'});
+	await new Promise(resolve => setTimeout(resolve, 150));
+	assert.match(t.lastFrame(), /first part second part/);
+});
+
 test('turn errors are printed and the chat stays usable', async () => {
 	const t = setup();
 	t.controller.setState('running');
